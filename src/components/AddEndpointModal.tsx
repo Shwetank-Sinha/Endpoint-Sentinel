@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { validateUrl, validEndpointName } from "../services/targetValidation";
 import Modal from "./Modal";
 import { createDefaultTarget } from "../services/monitoringApi";
 import { HTTP_METHODS } from "../types/monitoring";
@@ -26,37 +27,10 @@ interface Draft {
 	latencyThresholdMs: string;
 }
 
-function validateUrl(value: string): string | null {
-	const url = value.trim();
-	if (url.length === 0) return "URL is required.";
-
-	if (url.startsWith("/")) {
-		if (!/^\/api\/demo\/.+$/.test(url)) {
-			return "Relative URLs must be /api/demo routes, e.g. /api/demo/healthy.";
-		}
-		return null;
-	}
-
-	if (!/^https?:\/\//i.test(url)) {
-		return "URL must start with http:// or https:// (or be a relative /api/demo route).";
-	}
-
-	try {
-		new URL(url);
-	} catch {
-		return "URL could not be parsed as a valid http(s) address.";
-	}
-	return null;
-}
-
-function validateRequired(value: string, label: string): string | null {
-	return value.trim().length === 0 ? `${label} is required.` : null;
-}
-
 function validatePositiveInt(value: string, label: string): string | null {
 	if (value.trim().length === 0) return `${label} is required.`;
 	const parsed = Number(value);
-	if (!Number.isInteger(parsed) || parsed <= 0) {
+	if (!Number.isSafeInteger(parsed) || parsed <= 0) {
 		return `${label} must be a positive whole number.`;
 	}
 	return null;
@@ -89,7 +63,7 @@ export default function AddEndpointModal({ onAdd, onClose }: AddEndpointModalPro
 		const name = draft.name.trim();
 		const nextErrors: FieldErrors = {};
 
-		const nameError = validateRequired(name, "Name");
+		const nameError = validEndpointName(name) ? null : "Enter a descriptive name of at least two characters, including a letter or number.";
 		if (nameError !== null) nextErrors.name = nameError;
 
 		const urlError = validateUrl(draft.url);
@@ -97,8 +71,9 @@ export default function AddEndpointModal({ onAdd, onClose }: AddEndpointModalPro
 
 		const expectedStatusError = validatePositiveInt(draft.expectedStatus, "Expected status");
 		if (expectedStatusError !== null) nextErrors.expectedStatus = expectedStatusError;
+		else if (Number(draft.expectedStatus) < 100 || Number(draft.expectedStatus) > 599) nextErrors.expectedStatus = "Expected status must be an integer from 100 to 599.";
 
-		const timeoutError = validatePositiveInt(draft.timeoutMs, "Timeout");
+		const timeoutError = validatePositiveInt(draft.timeoutMs, "Timeout") ?? (Number(draft.timeoutMs) > 2147483647 ? "Timeout must not exceed 2147483647 ms." : null);
 		if (timeoutError !== null) nextErrors.timeoutMs = timeoutError;
 
 		const latencyError = validatePositiveInt(
@@ -198,7 +173,8 @@ export default function AddEndpointModal({ onAdd, onClose }: AddEndpointModalPro
 							className={inputClass(errors.expectedStatus !== undefined)}
 							type="number"
 							inputMode="numeric"
-							min={1}
+							min={100}
+							max={599}
 							step={1}
 							value={draft.expectedStatus}
 							onChange={(event) => update({ expectedStatus: event.target.value })}

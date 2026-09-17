@@ -1,6 +1,8 @@
 import type { CheckResult, CheckTarget, HttpMethod } from "../src/types/monitoring";
 import { HTTP_METHODS } from "../src/types/monitoring";
 
+import { isDemoPath, validateUrl } from "../src/services/targetValidation";
+
 export interface Env {}
 
 const jsonHeaders = { "Content-Type": "application/json; charset=utf-8" };
@@ -47,13 +49,7 @@ const demoHandlers: Readonly<Record<string, () => Promise<Response>>> = {
  * external URL, which is then fetched normally.
  */
 function demoHandlerForUrl(rawUrl: string): (() => Promise<Response>) | null {
-	let path = rawUrl;
-	try {
-		path = new URL(rawUrl).pathname;
-	} catch {
-		// rawUrl is already a path, use as-is
-	}
-	return demoHandlers[path] ?? null;
+	return isDemoPath(rawUrl) ? demoHandlers[rawUrl] ?? null : null;
 }
 
 /* ---------------------------------------------------------------------------
@@ -92,6 +88,9 @@ async function parseCheckTarget(request: Request): Promise<CheckTarget> {
 		throw new InvalidTargetError("Field 'url' (string) is required.");
 	}
 
+	const url = urlValue.trim();
+	const urlError = validateUrl(url);
+	if (urlError) throw new InvalidTargetError(urlError);
 	const method = validMethod(input.method);
 	const expectedStatus = validPositiveInt(
 		input.expectedStatus,
@@ -105,7 +104,9 @@ async function parseCheckTarget(request: Request): Promise<CheckTarget> {
 		DEFAULT_LATENCY_THRESHOLD_MS,
 	);
 
-	return { url: urlValue, method, expectedStatus, timeoutMs, latencyThresholdMs };
+	if (expectedStatus < 100 || expectedStatus > 599) throw new InvalidTargetError("Expected status must be an integer from 100 to 599.");
+	if (timeoutMs > 2147483647) throw new InvalidTargetError("Timeout must not exceed 2147483647 ms.");
+	return { url, method, expectedStatus, timeoutMs, latencyThresholdMs };
 }
 
 function validMethod(value: unknown): HttpMethod {
@@ -128,7 +129,7 @@ function validPositiveInt(
 	fallback: number,
 ): number {
 	if (value === undefined) return fallback;
-	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+	if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
 		throw new InvalidTargetError(`Field '${field}' must be a positive integer.`);
 	}
 	return value;
@@ -180,13 +181,14 @@ async function runCheck(target: CheckTarget): Promise<CheckResult> {
 
 	try {
 		if (demoHandler !== null) {
-			response = await runWithTimeout(() => demoHandler(), target.timeoutMs);
+			response = await runWithTimeout(() => target.method === "GET" ? demoHandler() : Promise.resolve(json({ error: `Method ${target.method} not allowed.` }, 405)), target.timeoutMs);
 		} else {
 			response = await runWithTimeout(
 				(signal) =>
 					fetch(target.url, {
 						method: target.method,
 						signal,
+						// Follow redirects and classify the final HTTP response.
 						redirect: "follow",
 					}),
 				target.timeoutMs,
@@ -194,7 +196,7 @@ async function runCheck(target: CheckTarget): Promise<CheckResult> {
 		}
 
 		// The target's response body is never surfaced to the caller.
-		await response.body?.cancel();
+		void response.body?.cancel().catch(() => { /* Body disposal does not change the observed response. */ });
 	} catch (error) {
 		if (error instanceof Error && error.name === "AbortError") {
 			timedOut = true;

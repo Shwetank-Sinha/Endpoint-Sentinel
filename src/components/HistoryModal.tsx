@@ -35,18 +35,16 @@ export default function HistoryModal({ endpoint, history, onClose }: HistoryModa
 				<p className="es-history__empty">No results recorded yet for this endpoint.</p>
 			) : (
 				<ul className="es-history">
-					{history.map((entry) => {
+					{history.map((entry, index) => {
 						const detail = entry.error ?? entry.result?.reason;
 						return (
 							<li
-								key={entry.result?.id ?? `error-${entry.checkedAt}`}
+								key={entry.result?.id ?? `error-${index}`}
 								className="es-history__item"
 							>
 								<header className="es-history__header">
 									<StatusBadge status={entry.status} />
-									<time className="es-history__time" dateTime={entry.checkedAt}>
-										{formatTime(entry.checkedAt)}
-									</time>
+									{entry.checkedAt ? <time className="es-history__time" dateTime={entry.checkedAt}>{formatTime(entry.checkedAt)}</time> : <span className="es-history__time">No check timestamp received</span>}
 								</header>
 
 								<dl className="es-history__meta">
