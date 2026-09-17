@@ -25,7 +25,7 @@ export interface HistoryEntry {
 	status: HistoryEntryStatus;
 	result: CheckResult | null;
 	error: string | null;
-	checkedAt: string;
+	checkedAt: string | null;
 }
 
 /** Monitoring history keyed by endpoint id (newest entry first). */
@@ -36,5 +36,5 @@ export interface DashboardSummary {
 	healthy: number;
 	degraded: number;
 	critical: number;
-	pending: number;
+	averageLatencyMs: number | null;
 }

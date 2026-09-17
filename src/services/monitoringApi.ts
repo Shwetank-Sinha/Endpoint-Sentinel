@@ -5,6 +5,8 @@
 
 import type { CheckResult, CheckTarget } from "../types/monitoring";
 
+import { normalizeResult } from "./resultValidation";
+
 const CHECK_ENDPOINT = "/api/check";
 
 /**
@@ -48,23 +50,7 @@ export function createDefaultTarget(): CheckTarget {
 }
 
 function parseCheckResult(payload: unknown): CheckResult {
-	if (typeof payload !== "object" || payload === null) {
-		throw new Error("Malformed check result from API.");
-	}
-
-	const result = payload as Record<string, unknown>;
-
-	if (
-		typeof result.id !== "string" ||
-		typeof result.status !== "string" ||
-		typeof result.reason !== "string" ||
-		typeof result.latencyMs !== "number" ||
-		typeof result.checkedAt !== "string" ||
-		typeof result.target !== "object" ||
-		result.target === null
-	) {
-		throw new Error("Malformed check result from API.");
-	}
-
-	return result as unknown as CheckResult;
+	const result = normalizeResult(payload);
+	if (!result) throw new Error("Malformed check result from API.");
+	return result;
 }

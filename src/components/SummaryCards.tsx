@@ -6,7 +6,7 @@ type Tone = (typeof TONES)[number];
 interface SummaryCardItem {
 	key: string;
 	label: string;
-	value: number;
+	value: number | string;
 	tone: Tone;
 }
 
@@ -20,7 +20,7 @@ export default function SummaryCards({ summary }: SummaryCardsProps) {
 		{ key: "healthy", label: "Healthy", value: summary.healthy, tone: "healthy" },
 		{ key: "degraded", label: "Degraded", value: summary.degraded, tone: "degraded" },
 		{ key: "critical", label: "Critical", value: summary.critical, tone: "critical" },
-		{ key: "pending", label: "Pending Checks", value: summary.pending, tone: "blue" },
+		{ key: "latency", label: "Average Latency", value: `${summary.averageLatencyMs ?? "\u2014"} ms`, tone: "blue" },
 	];
 
 	return (

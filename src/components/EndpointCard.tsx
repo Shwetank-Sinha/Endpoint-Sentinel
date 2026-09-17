@@ -1,9 +1,13 @@
 import type { DashboardEndpoint, EndpointStatus } from "../types/dashboard";
+import { isDemoPath } from "../services/targetValidation";
 import StatusBadge from "./StatusBadge";
 
 interface EndpointCardProps {
 	endpoint: DashboardEndpoint;
 	onCheck: (id: string) => void;
+	onDelete: (id: string) => void;
+	canDelete: boolean;
+	lastCheckedAt: string | null;
 	onShowHistory: (id: string) => void;
 }
 
@@ -20,7 +24,7 @@ const STATUS_EXPLANATIONS: Record<EndpointStatus, string> = {
 	ERROR: "",
 };
 
-export default function EndpointCard({ endpoint, onCheck, onShowHistory }: EndpointCardProps) {
+export default function EndpointCard({ endpoint, onCheck, onShowHistory, onDelete, canDelete, lastCheckedAt }: EndpointCardProps) {
 	const { id, name, target, status, result, error } = endpoint;
 	const isChecking = status === "CHECKING";
 	const detail = error ?? result?.reason ?? STATUS_EXPLANATIONS[status];
@@ -30,6 +34,7 @@ export default function EndpointCard({ endpoint, onCheck, onShowHistory }: Endpo
 			<header className="es-card__header">
 				<div className="es-card__heading">
 					<h3 className="es-card__name">{name}</h3>
+					<p className="es-form__hint">{isDemoPath(target.url) ? "Controlled Demo" : "External Endpoint"}</p>
 					<p className="es-card__url">
 						<span className="es-card__method">{target.method}</span>
 						<code className="es-card__code">{target.url}</code>
@@ -53,6 +58,8 @@ export default function EndpointCard({ endpoint, onCheck, onShowHistory }: Endpo
 				</div>
 			</dl>
 
+			<p className="es-form__hint">{lastCheckedAt ? <>Last checked: <time dateTime={lastCheckedAt}>{new Date(lastCheckedAt).toLocaleString()}</time></> : "Not checked yet"}</p>
+
 			{detail ? (
 				<p className="es-card__reason" aria-live="polite">
 					{detail}
@@ -61,6 +68,7 @@ export default function EndpointCard({ endpoint, onCheck, onShowHistory }: Endpo
 
 			<footer className="es-card__footer">
 				<div className="es-card__actions">
+					{canDelete ? <button type="button" className="es-btn" onClick={() => onDelete(id)}>Delete</button> : null}
 					<button
 						type="button"
 						className="es-btn"

@@ -87,7 +87,11 @@ export default function App() {
 	const [history, setHistory] = useState<EndpointHistoryMap>(() => loadSavedHistory());
 	const [addModalOpen, setAddModalOpen] = useState(false);
 	const [historyEndpointId, setHistoryEndpointId] = useState<string | null>(null);
-	const autoChecked = useRef(false);
+	const [batchActive, setBatchActive] = useState(false);
+	const generation = useRef(0);
+	const activeChecks = useRef(new Set<string>());
+	const removedIds = useRef(new Set<string>());
+	const batchRunning = useRef(false);
 
 	useEffect(() => {
 		saveEndpoints(endpoints);
@@ -106,13 +110,17 @@ export default function App() {
 	const checkEndpoint = useCallback(
 		async (id: string) => {
 			const def = endpoints.find((entry) => entry.id === id);
-			if (!def) return;
+			if (!def || activeChecks.current.has(id) || removedIds.current.has(id)) return;
+			const checkGeneration = generation.current;
+			const isCurrent = () => checkGeneration === generation.current && !removedIds.current.has(id);
+			activeChecks.current.add(id);
 
 			patchEndpoint(id, { status: "CHECKING", result: null, error: null });
 
 			let entry: HistoryEntry;
 			try {
 				const result = await runRealtimeCheck(def.target);
+				if (!isCurrent()) return;
 				patchEndpoint(id, { status: result.status, result });
 				entry = {
 					status: result.status,
@@ -121,14 +129,17 @@ export default function App() {
 					checkedAt: result.checkedAt,
 				};
 			} catch (caught) {
+				if (!isCurrent()) return;
 				const message = toMessage(caught);
 				patchEndpoint(id, { status: "ERROR", error: message });
 				entry = {
 					status: "ERROR",
 					result: null,
 					error: message,
-					checkedAt: new Date().toISOString(),
+					checkedAt: null,
 				};
+			} finally {
+				if (checkGeneration === generation.current) activeChecks.current.delete(id);
 			}
 
 			setHistory((prev) => appendHistoryEntry(prev, id, entry));
@@ -136,19 +147,36 @@ export default function App() {
 		[endpoints, patchEndpoint],
 	);
 
-	const checkAll = useCallback(() => {
-		void runChecksConcurrently(
-			endpoints.map((def) => def.id),
-			checkEndpoint,
-			CHECK_ALL_CONCURRENCY,
-		);
+	const checkAll = useCallback(async () => {
+		if (batchRunning.current || activeChecks.current.size > 0) return;
+		const batchGeneration = generation.current;
+		batchRunning.current = true;
+		setBatchActive(true);
+		try {
+			await runChecksConcurrently(endpoints.map((def) => def.id), async (id) => {
+				if (batchGeneration === generation.current) await checkEndpoint(id);
+			}, CHECK_ALL_CONCURRENCY);
+		} finally {
+			if (batchGeneration === generation.current) {
+				batchRunning.current = false;
+				setBatchActive(false);
+			}
+		}
 	}, [checkEndpoint, endpoints]);
 
-	useEffect(() => {
-		if (autoChecked.current) return;
-		autoChecked.current = true;
-		checkAll();
-	}, [checkAll]);
+	const deleteEndpoint = useCallback((id: string) => {
+		if (DEMO_ENDPOINTS.some((endpoint) => endpoint.id === id)) return;
+		const endpoint = endpoints.find((entry) => entry.id === id);
+		if (!endpoint || !window.confirm(`Delete "${endpoint.name}" and its local history?`)) return;
+		removedIds.current.add(id);
+		setEndpoints((prev) => prev.filter((entry) => entry.id !== id));
+		setHistory((prev) => {
+			const next = { ...prev };
+			delete next[id];
+			return next;
+		});
+		setHistoryEndpointId((current) => current === id ? null : current);
+	}, [endpoints]);
 
 	const addEndpoint = useCallback((name: string, target: CheckTarget) => {
 		const id = crypto.randomUUID();
@@ -164,6 +192,12 @@ export default function App() {
 			"Replace the current endpoint list with the demo endpoints? Custom endpoints and their history will be removed.",
 		);
 		if (!confirmed) return;
+		generation.current += 1;
+		activeChecks.current.clear();
+		removedIds.current.clear();
+		batchRunning.current = false;
+		setBatchActive(false);
+		setHistoryEndpointId(null);
 		setEndpoints(INITIAL_ENDPOINTS);
 		setHistory({});
 	}, []);
@@ -172,9 +206,16 @@ export default function App() {
 		let healthy = 0;
 		let degraded = 0;
 		let critical = 0;
-		let pending = 0;
+		const latencies: number[] = [];
 
 		for (const endpoint of endpoints) {
+			if (
+				endpoint.result &&
+				["HEALTHY", "DEGRADED", "CRITICAL"].includes(endpoint.status) &&
+				Number.isFinite(endpoint.result.latencyMs)
+			) {
+				latencies.push(endpoint.result.latencyMs);
+			}
 			switch (endpoint.status) {
 				case "HEALTHY":
 					healthy += 1;
@@ -183,12 +224,11 @@ export default function App() {
 					degraded += 1;
 					break;
 				case "CRITICAL":
-				case "ERROR":
 					critical += 1;
 					break;
+				case "ERROR":
 				case "NOT_CHECKED":
 				case "CHECKING":
-					pending += 1;
 					break;
 			}
 		}
@@ -198,7 +238,7 @@ export default function App() {
 			healthy,
 			degraded,
 			critical,
-			pending,
+			averageLatencyMs: latencies.length ? Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length) : null,
 		};
 	}, [endpoints]);
 
@@ -230,10 +270,10 @@ export default function App() {
 						type="button"
 						className="es-btn es-btn--primary"
 						onClick={checkAll}
-						disabled={anyChecking}
+						disabled={batchActive || anyChecking}
 						aria-live="polite"
 					>
-						{anyChecking ? "Checking All…" : "Check All"}
+						{batchActive ? "Checking All…" : "Check All"}
 					</button>
 				</div>
 			</header>
@@ -251,6 +291,9 @@ export default function App() {
 						endpoint={endpoint}
 						onCheck={checkEndpoint}
 						onShowHistory={setHistoryEndpointId}
+						onDelete={deleteEndpoint}
+						canDelete={!DEMO_ENDPOINTS.some((def) => def.id === endpoint.id)}
+						lastCheckedAt={endpoint.result?.checkedAt ?? history[endpoint.id]?.find((entry) => entry.result)?.result?.checkedAt ?? null}
 					/>
 				))}
 			</section>

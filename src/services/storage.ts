@@ -16,8 +16,8 @@ import type {
 	EndpointHistoryMap,
 	HistoryEntry,
 } from "../types/dashboard";
-import { HTTP_METHODS } from "../types/monitoring";
-import type { CheckResult, CheckTarget } from "../types/monitoring";
+import { normalizeTarget, normalizeResult } from "./resultValidation";
+import { validEndpointName } from "./targetValidation";
 
 export const MAX_HISTORY_PER_ENDPOINT = 20;
 
@@ -28,8 +28,6 @@ export const MAX_RESTORED_ENDPOINTS = 200;
 const ENDPOINTS_KEY = "endpoint-sentinel:endpoints";
 const HISTORY_KEY = "endpoint-sentinel:history";
 
-type HealthStatusLiteral = CheckResult["status"];
-
 /** True for JSON objects (never arrays) with a plain prototype. */
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return (
@@ -38,11 +36,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 		!Array.isArray(value) &&
 		Object.getPrototypeOf(value) === Object.prototype
 	);
-}
-
-/** True for whole numbers that are coercible to a sane "positive integer". */
-function isPositiveInt(value: unknown): value is number {
-	return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
 function readJSON(key: string): unknown {
@@ -62,70 +55,9 @@ function writeJSON(key: string, value: unknown): void {
 	}
 }
 
-function normalizeTarget(raw: unknown): CheckTarget | null {
-	if (!isRecord(raw)) return null;
-	const target = raw;
-	if (
-		typeof target.url !== "string" ||
-		target.url.length === 0 ||
-		typeof target.method !== "string" ||
-		!(HTTP_METHODS as readonly string[]).includes(target.method) ||
-		!isPositiveInt(target.expectedStatus) ||
-		!isPositiveInt(target.timeoutMs) ||
-		!isPositiveInt(target.latencyThresholdMs)
-	) {
-		return null;
-	}
-	return {
-		url: target.url,
-		method: target.method as CheckTarget["method"],
-		expectedStatus: target.expectedStatus,
-		timeoutMs: target.timeoutMs,
-		latencyThresholdMs: target.latencyThresholdMs,
-	};
-}
-
-function isValidHealthStatus(value: string): value is HealthStatusLiteral {
-	return value === "HEALTHY" || value === "DEGRADED" || value === "CRITICAL";
-}
-
-function normalizeResult(raw: unknown): CheckResult | null {
-	if (!isRecord(raw)) return null;
-	const result = raw;
-	if (
-		typeof result.id !== "string" ||
-		result.id.length === 0 ||
-		typeof result.status !== "string" ||
-		!isValidHealthStatus(result.status) ||
-		typeof result.reason !== "string" ||
-		typeof result.latencyMs !== "number" ||
-		!Number.isFinite(result.latencyMs) ||
-		result.latencyMs < 0 ||
-		typeof result.checkedAt !== "string"
-	) {
-		return null;
-	}
-	const code = result.actualStatusCode;
-	if (code !== null && (typeof code !== "number" || !Number.isInteger(code))) {
-		return null;
-	}
-	const target = normalizeTarget(result.target);
-	if (target === null) return null;
-	return {
-		id: result.id,
-		target,
-		status: result.status,
-		reason: result.reason,
-		latencyMs: result.latencyMs,
-		actualStatusCode: code === null ? null : (code as number),
-		checkedAt: result.checkedAt,
-	};
-}
-
 function normalizeHistoryEntry(raw: unknown): HistoryEntry | null {
 	if (!isRecord(raw)) return null;
 	const entry = raw;
-	if (typeof entry.checkedAt !== "string") return null;
 	const status = entry.status;
 	if (
 		status !== "HEALTHY" &&
@@ -139,12 +71,12 @@ function normalizeHistoryEntry(raw: unknown): HistoryEntry | null {
 		entry.result === null || entry.result === undefined
 			? null
 			: normalizeResult(entry.result);
-	return {
-		status,
-		result,
-		error: typeof entry.error === "string" ? entry.error : null,
-		checkedAt: entry.checkedAt,
-	};
+	if (status === "ERROR") {
+		return typeof entry.error === "string" && entry.error.length > 0
+			? { status, result: null, error: entry.error, checkedAt: null } : null;
+	}
+	if (!result || result.status !== status) return null;
+	return { status: result.status, result, error: null, checkedAt: result.checkedAt };
 }
 
 /**
@@ -161,10 +93,10 @@ export function loadSavedEndpoints(): DashboardEndpoint[] | null {
 		if (result.length >= MAX_RESTORED_ENDPOINTS) break;
 		if (!isRecord(item)) continue;
 		const entry = item;
-		if (typeof entry.id !== "string" || entry.id.length === 0) continue;
-		if (typeof entry.name !== "string" || entry.name.length === 0) continue;
+		if (typeof entry.id !== "string" || entry.id.length === 0 || Object.hasOwn(Object.prototype, entry.id)) continue;
+		if (typeof entry.name !== "string" || !validEndpointName(entry.name)) continue;
 		const target = normalizeTarget(entry.target);
-		if (target === null) continue;
+		if (target === null || result.some((endpoint) => endpoint.id === entry.id)) continue;
 		result.push({
 			id: entry.id,
 			name: entry.name,
@@ -181,9 +113,9 @@ export function loadSavedEndpoints(): DashboardEndpoint[] | null {
 export function loadSavedHistory(): EndpointHistoryMap {
 	const parsed = readJSON(HISTORY_KEY);
 	if (!isRecord(parsed)) return {};
-	const map: EndpointHistoryMap = {};
+	const map: EndpointHistoryMap = Object.create(null) as EndpointHistoryMap;
 	for (const [id, rawEntries] of Object.entries(parsed)) {
-		if (!Array.isArray(rawEntries)) continue;
+		if (Object.hasOwn(Object.prototype, id) || !Array.isArray(rawEntries)) continue;
 		const entries: HistoryEntry[] = [];
 		for (const rawEntry of rawEntries) {
 			const entry = normalizeHistoryEntry(rawEntry);
@@ -218,7 +150,7 @@ export function appendHistoryEntry(
 	endpointId: string,
 	entry: HistoryEntry,
 ): EndpointHistoryMap {
-	const previous = history[endpointId] ?? [];
+	const previous = Object.hasOwn(history, endpointId) ? history[endpointId] ?? [] : [];
 	return {
 		...history,
 		[endpointId]: [entry, ...previous].slice(0, MAX_HISTORY_PER_ENDPOINT),
