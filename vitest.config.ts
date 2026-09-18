@@ -15,6 +15,9 @@ export default defineConfig({
 					return new Response("late", { status: 200 });
 				}
 				if (url.hostname === "network.example.test") throw new Error("simulated DNS failure");
+				if (url.hostname === "webhook-success.example.test") return new Response(null, { status: 204 });
+				if (url.hostname === "webhook-retry.example.test") return new Response(null, { status: 429 });
+				if (url.hostname === "webhook-failed.example.test") return new Response(null, { status: 400 });
 				return new Response("ok", { status: 200 });
 			},
 			bindings: { TEST_MIGRATIONS: await readD1Migrations("./migrations") },

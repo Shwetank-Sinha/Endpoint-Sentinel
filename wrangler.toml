@@ -13,9 +13,20 @@ migrations_dir = "migrations"
 binding = "MONITORING_QUEUE"
 queue = "endpoint-sentinel-checks"
 
+[[queues.producers]]
+binding = "ALERT_QUEUE"
+queue = "endpoint-sentinel-alerts"
+
 [[queues.consumers]]
 queue = "endpoint-sentinel-checks"
 dead_letter_queue = "endpoint-sentinel-checks-dlq"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 3
+
+[[queues.consumers]]
+queue = "endpoint-sentinel-alerts"
+dead_letter_queue = "endpoint-sentinel-alerts-dlq"
 max_batch_size = 10
 max_batch_timeout = 5
 max_retries = 3
@@ -25,6 +36,9 @@ crons = ["* * * * *"]
 
 [vars]
 MAX_JOBS_PER_SCHEDULE = "100"
+INCIDENT_FAILURE_THRESHOLD = "2"
+INCIDENT_RECOVERY_THRESHOLD = "1"
+ALERT_WEBHOOK_FORMAT = "generic"
 
 [observability]
 enabled = true

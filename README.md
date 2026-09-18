@@ -1,25 +1,77 @@
 # Endpoint Sentinel
 
-Endpoint Sentinel is a React dashboard backed by a Cloudflare Worker, D1, Cron Triggers, and Cloudflare Queues. Milestone 2 performs real HTTP endpoint checks automatically and persists their results.
+Endpoint Sentinel is a React dashboard backed by a Cloudflare Worker, D1, Cron Triggers, and Cloudflare Queues. It performs real HTTP checks, tracks incident lifecycles, and emits deduplicated webhook alerts when operational state changes.
 
 ## Architecture
 
 ```text
-Cron Trigger (every minute)
-  -> bounded D1 due/stale-job selection
-  -> monitoring_jobs (QUEUED)
-  -> endpoint-sentinel-checks queue
-  -> Worker queue consumer
-  -> validated HTTP request
-  -> check_results + COMPLETED job
-  -> dashboard polling/history
+Cron / manual request
+  -> monitoring_jobs -> endpoint-sentinel-checks
+  -> validated HTTP probe -> check_results
+  -> incident evaluator -> incidents + incident_events
+  -> alert_deliveries -> endpoint-sentinel-alerts
+  -> generic or Discord webhook
 ```
 
-Manual **Check Now** uses the same path: `POST /api/endpoints/:id/check` creates a job and returns HTTP 202, then the dashboard polls `GET /api/jobs/:id`. The UI displays **Paused**, **Queued**, **Checking**, **Last checked**, and **Next check** states. Endpoint intervals are active scheduling inputs.
+Both queues are at-least-once. Unique job/result linkage, deterministic scheduled-job keys, immutable transition events, a single-active-incident index, and alert deduplication keys provide effectively-once result and alert state persistence. Cron republishes stale monitoring and alert jobs and evaluates any persisted results left unevaluated after a temporary infrastructure failure.
 
-The scheduler uses deterministic endpoint/time-bucket deduplication keys. Duplicate Cron invocations cannot create a second job for the same bucket. Queue delivery is at least once, not exactly once; job claiming plus the unique non-null `check_results.job_id` index provides effectively-once result persistence. Duplicate delivery acknowledges a terminal job without probing again. A Cron run republishes stale `QUEUED` jobs, covering the unavoidable D1-insert/queue-publish boundary.
+## Incident state model
 
-HTTP 500 is a valid `CRITICAL` observation. Timeouts, DNS, and network failures also become persisted `CRITICAL` monitoring results. D1/queue failures are infrastructure errors and are retried; exhausted consumer attempts set a sanitized job error. Responses are never buffered or logged.
+The defaults are `INCIDENT_FAILURE_THRESHOLD=2` and `INCIDENT_RECOVERY_THRESHOLD=1`:
+
+- One unhealthy result is treated as a transient observation and does not open an incident.
+- Two consecutive `DEGRADED` or `CRITICAL` results open one incident.
+- Further unhealthy results update the incident without generating repeated alerts.
+- `DEGRADED` escalating to `CRITICAL` creates one severity event and alert.
+- The configured number of consecutive `HEALTHY` results resolves the incident and creates one recovery alert.
+- An open incident can be acknowledged. Acknowledgement is audited but does not suppress recovery.
+- Manual resolution creates an audit event and resolution alert. If later unhealthy results cross the threshold, a new incident is created.
+
+HTTP 500, timeout, DNS, and network failures remain valid `CRITICAL` monitoring results. D1 and queue failures are infrastructure failures and are recovered separately.
+
+## Alert delivery
+
+Set the webhook URL as a Worker secret; it is never stored in D1, returned by an API, or included in logs:
+
+```powershell
+npx wrangler secret put ALERT_WEBHOOK_URL
+```
+
+`ALERT_WEBHOOK_FORMAT` is a non-secret environment setting in `wrangler.toml`. Supported values are `generic` and `discord`. Change it to `discord` before deployment when using a Discord channel webhook.
+
+Without `ALERT_WEBHOOK_URL`, incident processing continues and deliveries become `SKIPPED` with an honest status. Webhook bodies are discarded. HTTP 2xx succeeds; 408, 425, 429, and 5xx retry; other 4xx responses fail permanently. Requests have a ten-second timeout and bounded retries.
+
+The generic JSON payload has this shape:
+
+```json
+{
+  "event": "OPENED | SEVERITY_CHANGED | RESOLVED",
+  "incidentId": "<incident id>",
+  "endpoint": "<endpoint name>",
+  "severity": "DEGRADED | CRITICAL",
+  "status": "OPEN | ACKNOWLEDGED | RESOLVED",
+  "httpStatus": 500,
+  "latencyMs": 125,
+  "startedAt": "<UTC ISO timestamp>",
+  "reason": "<monitoring reason>",
+  "recoveryDurationSeconds": null
+}
+```
+
+Discord mode sends a concise content line and embed containing the same operational fields.
+
+## API and dashboard
+
+Endpoint CRUD, asynchronous checks, job polling, and result history remain available. Incident routes are scoped to the default workspace:
+
+- `GET /api/incidents?status=&severity=&endpointId=&limit=&cursor=`
+- `GET /api/incidents/:id`
+- `POST /api/incidents/:id/acknowledge`
+- `POST /api/incidents/:id/resolve`
+- `GET /api/incidents/:id/events`
+- `GET /api/incidents/:id/alerts`
+
+The dashboard retains endpoint monitoring and adds incident counts, filters, duration, detail views, event timelines, delivery status, acknowledgement/resolution actions, and active-incident markers on endpoint cards. No incident or queue statistics are fabricated.
 
 ## Local development
 
@@ -32,7 +84,7 @@ npm run cf-typegen
 npm run dev
 ```
 
-`npm run dev` runs the dashboard, Worker, local D1, and local queue consumer. For a dedicated Cron test session, stop Vite and start Wrangler with scheduled-event testing:
+For a dedicated local scheduled-event session:
 
 ```powershell
 npx wrangler dev --test-scheduled
@@ -46,43 +98,38 @@ npm run typecheck
 npm test
 npm run build
 git diff --check
+npm audit --omit=dev
 ```
 
-The API uses `{ "data": ... }` success envelopes and `{ "error": { "code": "...", "message": "...", "requestId": "..." } }` errors. Endpoint and job access is currently scoped to the stable default workspace.
+## Cloudflare resources and deployment order
 
-## Cloudflare resource creation and deployment
-
-The existing D1 database and its configured production ID must be retained. Create only the two queues, then apply the new migration before deploying:
+Keep the existing D1 database and production database ID. The monitoring queues from Milestone 2 remain unchanged. Create the two new alert queues, configure the webhook secret, apply migration `0003_incidents_alerts.sql`, and only then deploy:
 
 ```powershell
 npx wrangler login
-npx wrangler queues create endpoint-sentinel-checks
-npx wrangler queues create endpoint-sentinel-checks-dlq
+npx wrangler queues create endpoint-sentinel-alerts
+npx wrangler queues create endpoint-sentinel-alerts-dlq
+npx wrangler secret put ALERT_WEBHOOK_URL
 npx wrangler d1 migrations apply endpoint-sentinel --remote
 npm run cf-typegen
+npm run typecheck
+npm test
 npm run build
 npx wrangler deploy
 ```
 
-Recommended production verification:
+If alerts are intentionally disabled, omit the `wrangler secret put` command. Verification after deployment:
 
 ```powershell
 npx wrangler deployments list
-npx wrangler d1 execute endpoint-sentinel --remote --command "SELECT id, endpoint_id, source, status, attempt_count, scheduled_for FROM monitoring_jobs ORDER BY created_at DESC LIMIT 10;"
-npx wrangler d1 execute endpoint-sentinel --remote --command "SELECT id, endpoint_id, job_id, outcome, status_code, checked_at FROM check_results ORDER BY checked_at DESC LIMIT 10;"
 npx wrangler queues list
+npx wrangler d1 execute endpoint-sentinel --remote --command "SELECT id, endpoint_id, status, severity, started_at, resolved_at FROM incidents ORDER BY updated_at DESC LIMIT 20;"
+npx wrangler d1 execute endpoint-sentinel --remote --command "SELECT incident_id, event_type, created_at FROM incident_events ORDER BY created_at DESC LIMIT 20;"
+npx wrangler d1 execute endpoint-sentinel --remote --command "SELECT incident_id, status, attempt_count, response_status FROM alert_deliveries ORDER BY created_at DESC LIMIT 20;"
 ```
 
-Deployment order matters: create both queues, apply D1 migration `0002_queue_monitoring.sql`, generate types/build, then deploy the Worker containing the bindings and handlers. Do not recreate the D1 database. If deployment fails after migration, the additive schema remains compatible with the previous endpoint CRUD routes.
+## Security and current limitations
 
-## Scheduling and safety
+Endpoint targets remain HTTP/HTTPS-only; credential-bearing URLs and local/private/reserved literal addresses are rejected; redirects are revalidated; timeouts are enforced; response bodies are discarded; SQL is parameterized; and logs exclude webhook secrets and target URLs. A network-level egress policy is still recommended against DNS rebinding.
 
-- Cron runs once per minute and schedules at most `MAX_JOBS_PER_SCHEDULE` jobs (default 100, hard cap 500).
-- Queue publication uses bounded batches; the consumer batch is capped at 10 messages, waits at most 5 seconds, retries 3 times, and then routes to `endpoint-sentinel-checks-dlq`.
-- Disabled endpoints are excluded from scheduling. Jobs delivered after an endpoint is paused are finalized without a request. Deleting an endpoint cascades its jobs/results; any late queue delivery is safely acknowledged, and dashboard polling exits on the resulting not-found response.
-- Targets remain HTTP/HTTPS-only, credentials are forbidden, private/local/reserved literal addresses are blocked, every redirect target is revalidated, request timeouts are enforced, and response bodies are discarded.
-- SQL is parameterized. Logs include job/endpoint/source/outcome metadata but omit endpoint secrets and response bodies.
-
-## Current limitations and future work
-
-Authentication, users, a multi-workspace UI, authorization, alerts/notifications, custom headers and request bodies, secret storage, public status pages, retention controls, and incident aggregation remain future work. Hostname-based SSRF protection cannot prevent every DNS-rebinding scenario without an egress policy. The dashboard's next-check time is an estimate based on the latest result or creation time; queue latency and scheduler capacity can delay execution. DLQ inspection/replay is operational rather than exposed in the UI.
+Authentication, users, multi-workspace UI, per-user authorization, custom endpoint headers/bodies, secret storage for endpoint credentials, public status pages, alert-channel management, retention controls, and automated DLQ replay remain future work. Incident thresholds are Worker-wide environment settings rather than per-endpoint settings. Duration and next-check values shown in the browser are estimates based on persisted timestamps.

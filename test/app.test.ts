@@ -6,6 +6,9 @@ const payload = { name: "Payments API", url: "https://status.example.test/health
 async function json(response: Response) { return response.json() as Promise<Record<string, unknown>>; }
 
 beforeEach(async () => {
+	await env.DB.prepare("DELETE FROM alert_deliveries").run();
+	await env.DB.prepare("DELETE FROM incident_events").run();
+	await env.DB.prepare("DELETE FROM incidents").run();
 	await env.DB.prepare("DELETE FROM check_results").run();
 	await env.DB.prepare("DELETE FROM monitoring_jobs").run();
 	await env.DB.prepare("DELETE FROM endpoints").run();

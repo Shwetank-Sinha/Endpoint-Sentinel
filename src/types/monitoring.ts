@@ -69,6 +69,10 @@ export interface CheckResult {
 
 export type MonitoringJobSource = "SCHEDULED" | "MANUAL";
 export type MonitoringJobStatus = "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
+export type IncidentStatus = "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
+export type IncidentSeverity = "DEGRADED" | "CRITICAL";
+export type IncidentEventType = "OPENED" | "SEVERITY_CHANGED" | "ACKNOWLEDGED" | "RESOLVED" | "REOPENED";
+export type AlertDeliveryStatus = "QUEUED" | "DELIVERED" | "FAILED" | "SKIPPED";
 
 export interface MonitoringJob {
 	id: string;
@@ -84,6 +88,58 @@ export interface MonitoringJob {
 	result: CheckResult | null;
 }
 
+export interface IncidentSummary {
+	id: string;
+	endpointId: string;
+	endpointName: string;
+	status: IncidentStatus;
+	severity: IncidentSeverity;
+	title: string;
+	summary: string;
+	consecutiveFailureCount: number;
+	startedAt: string;
+	acknowledgedAt: string | null;
+	resolvedAt: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface IncidentEvent {
+	id: string;
+	incidentId: string;
+	eventType: IncidentEventType;
+	fromSeverity: IncidentSeverity | null;
+	toSeverity: IncidentSeverity | null;
+	resultId: string | null;
+	message: string;
+	createdAt: string;
+}
+
+export interface AlertDelivery {
+	id: string;
+	incidentId: string;
+	incidentEventId: string;
+	channel: string;
+	status: AlertDeliveryStatus;
+	attemptCount: number;
+	responseStatus: number | null;
+	lastError: string | null;
+	createdAt: string;
+	deliveredAt: string | null;
+	updatedAt: string;
+}
+
+export interface IncidentDetail extends IncidentSummary {
+	firstResultId: string | null;
+	latestResultId: string | null;
+}
+
+export interface IncidentPage {
+	items: IncidentSummary[];
+	nextCursor: string | null;
+	counts: { open: number; critical: number; resolved: number };
+}
+
 export interface EndpointRecord extends CheckTarget {
 	id: string;
 	workspaceId: string;
@@ -94,4 +150,5 @@ export interface EndpointRecord extends CheckTarget {
 	updatedAt: string;
 	latestResult: CheckResult | null;
 	activeJobStatus: "QUEUED" | "PROCESSING" | null;
+	activeIncident: { id: string; status: "OPEN" | "ACKNOWLEDGED"; severity: IncidentSeverity } | null;
 }
