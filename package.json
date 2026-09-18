@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
+    "cf-typegen": "wrangler types",
     "test": "vitest run",
     "typecheck": "tsc -b"
   },
@@ -19,6 +20,7 @@
     "@cloudflare/vite-plugin": "^1.54.10",
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260916.1",
+    "@types/node": "^26.6.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",

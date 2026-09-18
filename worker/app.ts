@@ -1,8 +1,6 @@
 import type { CheckResult, CheckTarget, EndpointRecord, HealthStatus, HttpMethod } from "../src/types/monitoring";
 import { ENDPOINT_LIMITS, isHttpMethod, validateUrl } from "../src/services/targetValidation";
 
-export interface Env { DB: D1Database }
-
 export const DEFAULT_WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 const MAX_REDIRECTS = 5;
@@ -205,6 +203,18 @@ export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const requestId = request.headers.get("cf-ray") ?? crypto.randomUUID();
 		try { return await route(request, env); }
-		catch (error) { const apiError = error instanceof ApiError ? error : new ApiError(500, "INTERNAL_ERROR", "An unexpected server error occurred."); if (!(error instanceof ApiError)) console.error("Unhandled request error", { requestId, error }); return failure(apiError, requestId); }
+		catch (error) {
+			const apiError = error instanceof ApiError ? error : new ApiError(500, "INTERNAL_ERROR", "An unexpected server error occurred.");
+			const log = apiError.status >= 500 ? console.error : console.warn;
+			log("API request failed", {
+				requestId,
+				method: request.method,
+				path: new URL(request.url).pathname,
+				status: apiError.status,
+				code: apiError.code,
+				error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error),
+			});
+			return failure(apiError, requestId);
+		}
 	},
 } satisfies ExportedHandler<Env>;
