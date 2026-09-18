@@ -67,6 +67,23 @@ export interface CheckResult {
 	checkedAt: string;
 }
 
+export type MonitoringJobSource = "SCHEDULED" | "MANUAL";
+export type MonitoringJobStatus = "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
+
+export interface MonitoringJob {
+	id: string;
+	endpointId: string;
+	source: MonitoringJobSource;
+	status: MonitoringJobStatus;
+	scheduledFor: string;
+	attemptCount: number;
+	lastError: string | null;
+	createdAt: string;
+	startedAt: string | null;
+	completedAt: string | null;
+	result: CheckResult | null;
+}
+
 export interface EndpointRecord extends CheckTarget {
 	id: string;
 	workspaceId: string;
@@ -76,4 +93,5 @@ export interface EndpointRecord extends CheckTarget {
 	createdAt: string;
 	updatedAt: string;
 	latestResult: CheckResult | null;
+	activeJobStatus: "QUEUED" | "PROCESSING" | null;
 }

@@ -1,4 +1,4 @@
-import type { CheckResult, EndpointRecord, HttpMethod } from "../types/monitoring";
+import type { CheckResult, EndpointRecord, HttpMethod, MonitoringJob } from "../types/monitoring";
 
 export interface EndpointPayload {
 	name: string; url: string; method: HttpMethod; expectedStatus: number;
@@ -27,6 +27,7 @@ export const endpointsApi = {
 	create: (payload: EndpointPayload) => request<EndpointRecord>("/api/endpoints", jsonInit("POST", payload)),
 	update: (id: string, payload: Partial<EndpointPayload>) => request<EndpointRecord>(`/api/endpoints/${encodeURIComponent(id)}`, jsonInit("PATCH", payload)),
 	remove: (id: string) => request<void>(`/api/endpoints/${encodeURIComponent(id)}`, { method: "DELETE" }),
-	check: (id: string) => request<CheckResult>(`/api/endpoints/${encodeURIComponent(id)}/check`, { method: "POST" }),
+	check: (id: string) => request<{ jobId: string; status: "QUEUED" }>(`/api/endpoints/${encodeURIComponent(id)}/check`, { method: "POST" }),
+	job: (id: string) => request<MonitoringJob>(`/api/jobs/${encodeURIComponent(id)}`),
 	results: (id: string, limit = 50) => request<CheckResult[]>(`/api/endpoints/${encodeURIComponent(id)}/results?limit=${limit}`),
 };

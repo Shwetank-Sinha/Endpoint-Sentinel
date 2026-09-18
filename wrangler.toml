@@ -9,5 +9,22 @@ database_name = "endpoint-sentinel"
 database_id = "443a1db2-5619-4c6d-8690-8d3d8a86b142"
 migrations_dir = "migrations"
 
+[[queues.producers]]
+binding = "MONITORING_QUEUE"
+queue = "endpoint-sentinel-checks"
+
+[[queues.consumers]]
+queue = "endpoint-sentinel-checks"
+dead_letter_queue = "endpoint-sentinel-checks-dlq"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 3
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+MAX_JOBS_PER_SCHEDULE = "100"
+
 [observability]
 enabled = true

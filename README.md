@@ -1,160 +1,88 @@
 # Endpoint Sentinel
 
-Endpoint Sentinel is a production-oriented API reliability platform for small engineering teams. Milestone 1 stores endpoint configuration and completed checks in Cloudflare D1; a fresh database contains a default workspace but no endpoints.
+Endpoint Sentinel is a React dashboard backed by a Cloudflare Worker, D1, Cron Triggers, and Cloudflare Queues. Milestone 2 performs real HTTP endpoint checks automatically and persists their results.
 
-## Implemented
+## Architecture
 
-- Workspace-scoped endpoint CRUD through `GET/POST /api/endpoints` and `GET/PATCH/DELETE /api/endpoints/:id`.
-- Manual real HTTP checks through `POST /api/endpoints/:id/check`; every completed healthy, degraded, timeout, network-error, or unexpected-status check is persisted.
-- Persisted history through `GET /api/endpoints/:id/results?limit=50`, plus latest and average latency in the dashboard details view.
-- Strict server validation for methods, HTTP status, timeouts, thresholds, intervals, credentials, local/private/reserved targets, and redirect destinations.
-- Empty, loading, success, and error UI states; create/edit/delete/check controls; and accessible modal confirmation instead of `window.confirm`.
-- Controlled `/api/demo/healthy`, `/api/demo/slow`, and `/api/demo/failing` development fixtures. They are never seeded into the dashboard.
+```text
+Cron Trigger (every minute)
+  -> bounded D1 due/stale-job selection
+  -> monitoring_jobs (QUEUED)
+  -> endpoint-sentinel-checks queue
+  -> Worker queue consumer
+  -> validated HTTP request
+  -> check_results + COMPLETED job
+  -> dashboard polling/history
+```
 
-## Local D1 setup
+Manual **Check Now** uses the same path: `POST /api/endpoints/:id/check` creates a job and returns HTTP 202, then the dashboard polls `GET /api/jobs/:id`. The UI displays **Paused**, **Queued**, **Checking**, **Last checked**, and **Next check** states. Endpoint intervals are active scheduling inputs.
 
-Use Node.js 24 LTS. Install packages, create the local D1 schema, then start Vite and the Worker together:
+The scheduler uses deterministic endpoint/time-bucket deduplication keys. Duplicate Cron invocations cannot create a second job for the same bucket. Queue delivery is at least once, not exactly once; job claiming plus the unique non-null `check_results.job_id` index provides effectively-once result persistence. Duplicate delivery acknowledges a terminal job without probing again. A Cron run republishes stale `QUEUED` jobs, covering the unavoidable D1-insert/queue-publish boundary.
+
+HTTP 500 is a valid `CRITICAL` observation. Timeouts, DNS, and network failures also become persisted `CRITICAL` monitoring results. D1/queue failures are infrastructure errors and are retried; exhausted consumer attempts set a sanitized job error. Responses are never buffered or logged.
+
+## Local development
+
+Use Node.js 24 LTS:
 
 ```powershell
 npm ci
 npx wrangler d1 migrations apply endpoint-sentinel --local
+npm run cf-typegen
 npm run dev
 ```
 
-Useful verification commands:
+`npm run dev` runs the dashboard, Worker, local D1, and local queue consumer. For a dedicated Cron test session, stop Vite and start Wrangler with scheduled-event testing:
 
 ```powershell
+npx wrangler dev --test-scheduled
+Invoke-WebRequest -Method Get -Uri 'http://localhost:8787/__scheduled?cron=*+*+*+*+*'
+```
+
+Verification:
+
+```powershell
+npm run typecheck
 npm test
-npm run typecheck
 npm run build
-npm run preview
+git diff --check
 ```
 
-Local D1 data lives under `.wrangler/` and is intentionally ignored by Git. The migration creates the stable `Default Workspace`; it does not create endpoints or check results.
+The API uses `{ "data": ... }` success envelopes and `{ "error": { "code": "...", "message": "...", "requestId": "..." } }` errors. Endpoint and job access is currently scoped to the stable default workspace.
 
-## Production database and deployment
+## Cloudflare resource creation and deployment
 
-Create the database once, copy its ID into `wrangler.toml`, apply migrations remotely, and deploy:
+The existing D1 database and its configured production ID must be retained. Create only the two queues, then apply the new migration before deploying:
 
 ```powershell
 npx wrangler login
-npx wrangler d1 create endpoint-sentinel
+npx wrangler queues create endpoint-sentinel-checks
+npx wrangler queues create endpoint-sentinel-checks-dlq
 npx wrangler d1 migrations apply endpoint-sentinel --remote
-npm run deploy
+npm run cf-typegen
+npm run build
+npx wrangler deploy
 ```
 
-Do not deploy while `database_id` is still `REPLACE_WITH_D1_DATABASE_ID`. Build and migration are separate operations; `npm run deploy` builds and deploys but does not apply remote migrations.
+Recommended production verification:
 
-## API envelopes
+```powershell
+npx wrangler deployments list
+npx wrangler d1 execute endpoint-sentinel --remote --command "SELECT id, endpoint_id, source, status, attempt_count, scheduled_for FROM monitoring_jobs ORDER BY created_at DESC LIMIT 10;"
+npx wrangler d1 execute endpoint-sentinel --remote --command "SELECT id, endpoint_id, job_id, outcome, status_code, checked_at FROM check_results ORDER BY checked_at DESC LIMIT 10;"
+npx wrangler queues list
+```
 
-Successful JSON responses use `{ "data": ... }`. Failures use `{ "error": { "code": "VALIDATION_ERROR", "message": "...", "requestId": "..." } }`. DELETE succeeds with HTTP 204 and no body.
+Deployment order matters: create both queues, apply D1 migration `0002_queue_monitoring.sql`, generate types/build, then deploy the Worker containing the bindings and handlers. Do not recreate the D1 database. If deployment fails after migration, the additive schema remains compatible with the previous endpoint CRUD routes.
 
-All endpoint reads and mutations include the default `workspace_id`, leaving an explicit authorization boundary for a later authentication milestone. D1 statements are parameterized.
+## Scheduling and safety
 
-## Planned, not implemented
+- Cron runs once per minute and schedules at most `MAX_JOBS_PER_SCHEDULE` jobs (default 100, hard cap 500).
+- Queue publication uses bounded batches; the consumer batch is capped at 10 messages, waits at most 5 seconds, retries 3 times, and then routes to `endpoint-sentinel-checks-dlq`.
+- Disabled endpoints are excluded from scheduling. Jobs delivered after an endpoint is paused are finalized without a request. Deleting an endpoint cascades its jobs/results; any late queue delivery is safely acknowledged, and dashboard polling exits on the resulting not-found response.
+- Targets remain HTTP/HTTPS-only, credentials are forbidden, private/local/reserved literal addresses are blocked, every redirect target is revalidated, request timeouts are enforced, and response bodies are discarded.
+- SQL is parameterized. Logs include job/endpoint/source/outcome metadata but omit endpoint secrets and response bodies.
 
-- Authentication, users, workspace switching, and authorization.
-- Scheduled checks (Cron), Queues, alerting, and notifications.
-- Request bodies, custom headers/secrets, incident aggregation, retention controls, and production analytics charts.
-- Automated migration during deployment. Run the documented remote migration command explicitly.
+## Current limitations and future work
 
-<details>
-<summary>Historical demonstration documentation (pre-D1)</summary>
-
-A manual endpoint monitoring MVP built with React, strict TypeScript, Vite and a Cloudflare Worker. All health classifications, observed HTTP codes, elapsed times and check timestamps come from real POST /api/check executions. No checks run at startup.
-
-## Working features
-
-- Check Now and Check All (up to four concurrent checks, independent results).
-- Healthy, Degraded, Critical, Not Checked, Checking and request-error feedback.
-- Average Latency from current completed API results only, including measured failed probes; excludes unchecked, checking and API request errors. An empty average displays an em dash.
-- Add endpoints with validated names, HTTP(S) URLs or the three supported relative demo paths, HTTP methods, expected status and positive integer time limits.
-- Confirmed deletion of custom endpoints and their history. The three default entries cannot be individually deleted.
-- Restore Demo Endpoints resets configuration, results, errors and history without checking. Late responses cannot restore deleted/reset data.
-- Local timestamps from the Worker and up to 20 history entries per endpoint.
-
-## Architecture and persistence
-
-React calls the same-origin Worker POST /api/check. External targets are fetched by the Worker with the selected HTTP method. Redirects are followed; the final response status is classified. performance.now() measures elapsed time through response headers, and AbortController enforces the timeout. Response bodies are discarded and never returned to the dashboard.
-
-Exact relative demo paths execute internal handlers without recursive self-fetching. Absolute URLs are always fetched, even when their pathname matches a demo route. Demo handlers allow GET; other methods return 405.
-
-Endpoint configuration and monitoring history use browser localStorage, not D1. Refresh restores configuration as NOT_CHECKED and preserves historical results and their timestamps. Invalid stored entries are discarded. Storage quota/privacy failures leave the application usable in memory but can prevent persistence. Browser data can be edited by its owner; it is not an audit store.
-
-## Windows local setup
-
-Use Node.js 24 LTS and npm. In PowerShell, from the repository directory:
-
-~~~powershell
-npm ci
-npm run dev
-~~~
-
-Open the local URL printed by Vite. The Cloudflare Vite plugin runs the Worker alongside React; a separate API server is unnecessary.
-
-~~~powershell
-npm run build
-npm run typecheck
-npm run preview
-~~~
-
-Build runs strict TypeScript checking and Vite bundling. Preview serves the built application through the configured Cloudflare plugin.
-
-## API
-
-Example request (PowerShell):
-
-~~~powershell
-$checkBody = @{ url = '/api/demo/slow'; method = 'GET'; expectedStatus = 200; timeoutMs = 5000; latencyThresholdMs = 800 } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri 'http://localhost:5173/api/check' -ContentType 'application/json' -Body $checkBody
-~~~
-
-Response shape below is illustrative documentation, not stored monitoring data. Values are generated by each real execution:
-
-~~~json
-{
-  "id": "<generated run UUID>",
-  "target": { "url": "/api/demo/slow", "method": "GET", "expectedStatus": 200, "timeoutMs": 5000, "latencyThresholdMs": 800 },
-  "status": "DEGRADED",
-  "reason": "Responded HTTP 200 in 1203 ms, exceeding the 800 ms latency threshold.",
-  "latencyMs": 1203,
-  "actualStatusCode": 200,
-  "checkedAt": "2026-09-17T12:00:00.000Z"
-}
-~~~
-
-Invalid input returns HTTP 400 with an error message. A completed check returns HTTP 200 with a health result, including CRITICAL results. Network failures/timeouts have actualStatusCode null and measured elapsed time. Failure to call the checking API is shown separately as Check Failed, without an invented health result or check timestamp.
-
-## Health rules and controlled demos
-
-- Timeout or network failure: CRITICAL.
-- Unexpected HTTP status: CRITICAL.
-- Expected status, elapsed time above threshold: DEGRADED.
-- Expected status, elapsed time at or below threshold: HEALTHY.
-
-With defaults (GET, expected 200, 5000 ms timeout, 800 ms threshold):
-
-| Controlled route | Real handler behavior | Expected classification |
-| --- | --- | --- |
-| /api/demo/healthy | Returns 200 | HEALTHY |
-| /api/demo/slow | Waits approximately 1200 ms, returns 200 | DEGRADED |
-| /api/demo/failing | Returns 500 | CRITICAL |
-
-Classification always uses measured results; scheduling/load may affect latency. These are controlled demonstrations, not external uptime measurements.
-
-## Deployment and limitations
-
-For deployment with a configured Cloudflare account:
-
-~~~powershell
-npx wrangler login
-npm run deploy
-~~~
-
-Deployment is separate from local build/testing. Production routing and external reachability still need verification on the deployed Worker.
-
-Current limitations: manual checks only, browser-local data, no cross-device synchronization, no authentication, no request-body/custom-header configuration, no alerts or scheduled monitoring. External hosts can reject Worker requests or be unreachable; these failures are reported. Selected methods can have side effects on external services. Latency measures response headers rather than a full body download. Timeout is limited to 2147483647 ms to avoid timer overflow. At most 200 saved endpoints are restored.
-
-Future work (not implemented): Cloudflare D1 storage, Queues for distributed checks, Cron scheduling, and alert delivery.
-
-</details>
+Authentication, users, a multi-workspace UI, authorization, alerts/notifications, custom headers and request bodies, secret storage, public status pages, retention controls, and incident aggregation remain future work. Hostname-based SSRF protection cannot prevent every DNS-rebinding scenario without an egress policy. The dashboard's next-check time is an estimate based on the latest result or creation time; queue latency and scheduler capacity can delay execution. DLQ inspection/replay is operational rather than exposed in the UI.
