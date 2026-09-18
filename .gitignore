@@ -3,4 +3,5 @@ dist/
 .dev.vars
 .wrangler/
 *.local
-*.tsbuildinfodist/
+*.tsbuildinfo
+dist/

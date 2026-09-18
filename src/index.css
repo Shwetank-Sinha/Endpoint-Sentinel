@@ -651,3 +651,11 @@ body {
 		transform: none;
 	}
 }
+
+.es-empty, .es-loading, .es-error-state { margin-top: 2rem; padding: 3rem 1.5rem; text-align: center; border: 1px solid #dce3ec; border-radius: 16px; background: #fff; }
+.es-notice { padding: .75rem 1rem; border-radius: 8px; background: #eaf8f0; color: #17633a; }
+.es-btn--danger { background: #b42332; border-color: #b42332; color: #fff; }
+.es-form__checkbox { display: flex; gap: .5rem; align-items: center; }
+.es-details__heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.es-details__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.es-details__grid dd { margin: .25rem 0 0; overflow-wrap: anywhere; }
