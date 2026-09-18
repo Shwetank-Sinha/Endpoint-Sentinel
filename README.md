@@ -1,5 +1,66 @@
 # Endpoint Sentinel
 
+Endpoint Sentinel is a production-oriented API reliability platform for small engineering teams. Milestone 1 stores endpoint configuration and completed checks in Cloudflare D1; a fresh database contains a default workspace but no endpoints.
+
+## Implemented
+
+- Workspace-scoped endpoint CRUD through `GET/POST /api/endpoints` and `GET/PATCH/DELETE /api/endpoints/:id`.
+- Manual real HTTP checks through `POST /api/endpoints/:id/check`; every completed healthy, degraded, timeout, network-error, or unexpected-status check is persisted.
+- Persisted history through `GET /api/endpoints/:id/results?limit=50`, plus latest and average latency in the dashboard details view.
+- Strict server validation for methods, HTTP status, timeouts, thresholds, intervals, credentials, local/private/reserved targets, and redirect destinations.
+- Empty, loading, success, and error UI states; create/edit/delete/check controls; and accessible modal confirmation instead of `window.confirm`.
+- Controlled `/api/demo/healthy`, `/api/demo/slow`, and `/api/demo/failing` development fixtures. They are never seeded into the dashboard.
+
+## Local D1 setup
+
+Use Node.js 24 LTS. Install packages, create the local D1 schema, then start Vite and the Worker together:
+
+```powershell
+npm ci
+npx wrangler d1 migrations apply endpoint-sentinel --local
+npm run dev
+```
+
+Useful verification commands:
+
+```powershell
+npm test
+npm run typecheck
+npm run build
+npm run preview
+```
+
+Local D1 data lives under `.wrangler/` and is intentionally ignored by Git. The migration creates the stable `Default Workspace`; it does not create endpoints or check results.
+
+## Production database and deployment
+
+Create the database once, copy its ID into `wrangler.toml`, apply migrations remotely, and deploy:
+
+```powershell
+npx wrangler login
+npx wrangler d1 create endpoint-sentinel
+npx wrangler d1 migrations apply endpoint-sentinel --remote
+npm run deploy
+```
+
+Do not deploy while `database_id` is still `REPLACE_WITH_D1_DATABASE_ID`. Build and migration are separate operations; `npm run deploy` builds and deploys but does not apply remote migrations.
+
+## API envelopes
+
+Successful JSON responses use `{ "data": ... }`. Failures use `{ "error": { "code": "VALIDATION_ERROR", "message": "...", "requestId": "..." } }`. DELETE succeeds with HTTP 204 and no body.
+
+All endpoint reads and mutations include the default `workspace_id`, leaving an explicit authorization boundary for a later authentication milestone. D1 statements are parameterized.
+
+## Planned, not implemented
+
+- Authentication, users, workspace switching, and authorization.
+- Scheduled checks (Cron), Queues, alerting, and notifications.
+- Request bodies, custom headers/secrets, incident aggregation, retention controls, and production analytics charts.
+- Automated migration during deployment. Run the documented remote migration command explicitly.
+
+<details>
+<summary>Historical demonstration documentation (pre-D1)</summary>
+
 A manual endpoint monitoring MVP built with React, strict TypeScript, Vite and a Cloudflare Worker. All health classifications, observed HTTP codes, elapsed times and check timestamps come from real POST /api/check executions. No checks run at startup.
 
 ## Working features
@@ -95,3 +156,5 @@ Deployment is separate from local build/testing. Production routing and external
 Current limitations: manual checks only, browser-local data, no cross-device synchronization, no authentication, no request-body/custom-header configuration, no alerts or scheduled monitoring. External hosts can reject Worker requests or be unreachable; these failures are reported. Selected methods can have side effects on external services. Latency measures response headers rather than a full body download. Timeout is limited to 2147483647 ms to avoid timer overflow. At most 200 saved endpoints are restored.
 
 Future work (not implemented): Cloudflare D1 storage, Queues for distributed checks, Cron scheduling, and alert delivery.
+
+</details>

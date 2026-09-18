@@ -32,7 +32,7 @@ export type HealthStatus = (typeof HEALTH_STATUSES)[number];
  * A single endpoint target to check.
  */
 export interface CheckTarget {
-	/** Absolute URL (or /api/demo/* path) to probe. */
+	/** Absolute HTTP(S) URL to probe. */
 	url: string;
 	/** HTTP method to use for the probe. */
 	method: HttpMethod;
@@ -45,7 +45,7 @@ export interface CheckTarget {
 }
 
 /**
- * Result of a single check run. Serialized as-is by /api/check.
+ * Result of a single check run returned by the endpoint check API.
  */
 export interface CheckResult {
 	/** Unique identifier for this run. */
@@ -65,4 +65,15 @@ export interface CheckResult {
 	actualStatusCode: number | null;
 	/** ISO 8601 timestamp of when the check finished. */
 	checkedAt: string;
+}
+
+export interface EndpointRecord extends CheckTarget {
+	id: string;
+	workspaceId: string;
+	name: string;
+	checkIntervalMinutes: number;
+	enabled: boolean;
+	createdAt: string;
+	updatedAt: string;
+	latestResult: CheckResult | null;
 }
