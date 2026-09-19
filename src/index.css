@@ -796,9 +796,23 @@ body {
 .es-account-user div { display: grid; }
 .es-account-user small { color: var(--color-navy-muted); }
 .es-account-actions select { font: inherit; padding: .5rem; border: 1px solid var(--color-border); border-radius: 8px; background: white; }
+.es-team { display: grid; gap: 1.5rem; }
+.es-team section h3 { margin: 0 0 .5rem; }
+.es-team-form { display: grid; grid-template-columns: minmax(0, 1fr) 120px auto; gap: .75rem; align-items: end; margin-top: 1rem; }
+.es-copy-row { display: flex; gap: .5rem; margin-top: .75rem; }
+.es-team-list { display: grid; gap: .65rem; margin: 0; padding: 0; list-style: none; }
+.es-team-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem; border: 1px solid var(--color-border); border-radius: 10px; }
+.es-team-list small, .es-team-person div { display: block; color: var(--color-navy-muted); }
+.es-team-person, .es-team-actions { display: flex; align-items: center; gap: .65rem; }
+.es-team-person img, .es-team-person > span { width: 2rem; height: 2rem; display: grid; place-items: center; border-radius: 50%; background: var(--color-accent-soft); object-fit: cover; }
+.es-team-actions select { font: inherit; padding: .45rem; border: 1px solid var(--color-border); border-radius: 8px; background: white; }
+.es-invite-card { text-align: left; }
+.es-invite-card .es-auth-mark, .es-invite-card h1 { text-align: center; }
 
 @media (max-width: 720px) {
 	.es-account-bar, .es-account-actions { align-items: stretch; flex-direction: column; }
+	.es-team-form { grid-template-columns: 1fr; }
+	.es-team-list li, .es-team-actions, .es-copy-row { align-items: stretch; flex-direction: column; }
 	.es-incident-summary { grid-template-columns: 1fr; }
 	.es-incident-row { grid-template-columns: 1fr; }
 	.es-incident-row dl { flex-wrap: wrap; }

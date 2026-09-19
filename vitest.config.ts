@@ -7,6 +7,7 @@ export default defineConfig({
 		miniflare: {
 			compatibilityDate: "2026-08-22",
 			d1Databases: ["DB"],
+			serviceBindings: { ASSETS: async () => new Response('<!doctype html><html><body><div id="root"></div></body></html>', { headers: { "content-type": "text/html; charset=utf-8" } }) },
 			outboundService: async (request) => {
 				const url = new URL(request.url);
 				if (url.hostname === "github.com" && url.pathname === "/login/oauth/access_token") { const body = await request.text(); const code = new URLSearchParams(body).get("code") ?? ""; return Response.json({ access_token: `token-${code}`, token_type: "bearer" }); }

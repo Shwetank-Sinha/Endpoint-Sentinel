@@ -8,6 +8,7 @@ export const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" 
 export const success = (data: unknown, status = 200, headers?: HeadersInit) => new Response(JSON.stringify({ data }), { status, headers: { ...JSON_HEADERS, ...headers } });
 export const failure = (error: ApiError, requestId: string) => new Response(JSON.stringify({ error: { code: error.code, message: error.message, requestId } }), { status: error.status, headers: JSON_HEADERS });
 export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+export function redactedRequestPath(rawUrl: string): string { const path = new URL(rawUrl).pathname; return path.replace(/^\/api\/invitations\/[^/]+/, "/api/invitations/[redacted]").replace(/^\/invite\/[^/]+/, "/invite/[redacted]"); }
 
 export function withSecurityHeaders(response: Response): Response {
 	const secured = new Response(response.body, response);

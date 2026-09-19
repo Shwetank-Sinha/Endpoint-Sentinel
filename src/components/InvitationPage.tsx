@@ -1,0 +1,11 @@
+import { useEffect, useState } from "react";
+import { teamApi, type AuthSession, type InvitationDetail } from "../services/endpointsApi";
+
+interface Props { token: string; session: AuthSession; onAccepted: (workspaceId: string) => void; onCancel: () => void }
+const message = (error: unknown) => error instanceof Error ? error.message : "The invitation could not be loaded.";
+export default function InvitationPage({ token, session, onAccepted, onCancel }: Props) {
+	const [invitation, setInvitation] = useState<InvitationDetail | null>(null), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
+	useEffect(() => { void (async () => { try { setInvitation(await teamApi.invitation(token)); } catch (cause) { setError(message(cause)); } finally { setLoading(false); } })(); }, [token]);
+	async function accept() { setBusy(true); setError(null); try { const accepted = await teamApi.acceptInvitation(token); onAccepted(accepted.workspace.id); } catch (cause) { setError(message(cause)); } finally { setBusy(false); } }
+	return <main className="es-auth"><div className="es-auth-card es-invite-card"><div className="es-auth-mark" aria-hidden="true">ES</div><h1>Workspace invitation</h1>{loading ? <p role="status">Loading invitation…</p> : error ? <p className="es-form__error" role="alert">{error}</p> : invitation ? <>{invitation.matchesCurrentUser && invitation.workspace ? <><p><strong>{invitation.invitedBy?.displayName ?? `@${invitation.invitedBy?.githubLogin}`}</strong> invited you to join <strong>{invitation.workspace.name}</strong> as a member.</p><p className="es-form__hint">Invitation for @{invitation.invitedGithubLogin} · expires {new Date(invitation.expiresAt).toLocaleString()}</p>{invitation.status === "PENDING" ? <button className="es-btn es-btn--primary" disabled={busy} onClick={() => void accept()}>{busy ? "Accepting…" : "Accept invitation"}</button> : <p className="es-form__error" role="alert">This invitation is {invitation.status.toLowerCase()} and cannot be used.</p>}</> : <p className="es-form__error" role="alert">This invitation is for <strong>@{invitation.invitedGithubLogin}</strong>, but you are signed in as <strong>@{session.user.githubLogin}</strong>.</p>}</> : null}<button className="es-btn" onClick={onCancel}>Cancel</button></div></main>;
+}
