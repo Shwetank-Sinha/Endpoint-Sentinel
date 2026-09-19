@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { env, SELF } from "cloudflare:test";
+import { env } from "cloudflare:test";
 import { DEFAULT_WORKSPACE_ID } from "../worker/app";
 import { acknowledgeIncident, evaluateIncident, processAlertMessage, recoverStaleAlerts, resolveIncident, type AlertQueueMessage } from "../worker/incidents";
+import { apiFetch, installTestSession } from "./auth-helper";
 
 const sent: AlertQueueMessage[] = [];
 const alertQueue = {
@@ -33,7 +34,12 @@ beforeEach(async () => {
 	await env.DB.prepare("DELETE FROM check_results").run();
 	await env.DB.prepare("DELETE FROM monitoring_jobs").run();
 	await env.DB.prepare("DELETE FROM endpoints").run();
+	await env.DB.prepare("DELETE FROM sessions").run();
+	await env.DB.prepare("DELETE FROM oauth_states").run();
+	await env.DB.prepare("DELETE FROM workspace_memberships").run();
+	await env.DB.prepare("DELETE FROM users").run();
 	await env.DB.prepare("DELETE FROM workspaces WHERE id <> ?").bind(DEFAULT_WORKSPACE_ID).run();
+	await installTestSession();
 });
 
 describe("incident evaluation", () => {
@@ -150,9 +156,9 @@ describe("incident API", () => {
 	it("isolates workspaces and validates filters and pagination", async () => {
 		await env.DB.prepare("INSERT INTO workspaces (id,name) VALUES ('other-incidents','Other')").run(); await endpoint("foreign-incident", "other-incidents");
 		await env.DB.prepare("INSERT INTO incidents (id,workspace_id,endpoint_id,status,severity,title,summary,consecutive_failure_count,started_at,created_at,updated_at) VALUES ('foreign-i','other-incidents','foreign-incident','OPEN','CRITICAL','Foreign','Hidden',2,'2026-09-19T10:00:00.000Z','2026-09-19T10:00:00.000Z','2026-09-19T10:00:00.000Z')").run();
-		expect(((await (await SELF.fetch("https://app.test/api/incidents")).json()) as { data: { items: unknown[] } }).data.items).toEqual([]);
-		for (const query of ["status=BAD", "severity=BAD", "limit=0", "cursor=bad"]) expect((await SELF.fetch(`https://app.test/api/incidents?${query}`)).status).toBe(400);
+		expect(((await (await apiFetch("https://app.test/api/incidents")).json()) as { data: { items: unknown[] } }).data.items).toEqual([]);
+		for (const query of ["status=BAD", "severity=BAD", "limit=0", "cursor=bad"]) expect((await apiFetch(`https://app.test/api/incidents?${query}`)).status).toBe(400);
 		await openIncident("api-one"); await openIncident("api-two");
-		const page = await SELF.fetch("https://app.test/api/incidents?status=OPEN&severity=DEGRADED&limit=1"); expect(page.status).toBe(200); const data = (await page.json() as { data: { items: unknown[]; nextCursor: string } }).data; expect(data.items).toHaveLength(1); expect(data.nextCursor).toEqual(expect.any(String));
+		const page = await apiFetch("https://app.test/api/incidents?status=OPEN&severity=DEGRADED&limit=1"); expect(page.status).toBe(200); const data = (await page.json() as { data: { items: unknown[]; nextCursor: string } }).data; expect(data.items).toHaveLength(1); expect(data.nextCursor).toEqual(expect.any(String));
 	});
 });

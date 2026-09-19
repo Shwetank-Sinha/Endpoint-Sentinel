@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { env, SELF } from "cloudflare:test";
+import { env } from "cloudflare:test";
 import { DEFAULT_WORKSPACE_ID, executeCheck, parseQueueMessage, processQueueMessage, scheduleChecks, scheduledBucket, type MonitoringQueueMessage } from "../worker/app";
+import { apiFetch, installTestSession } from "./auth-helper";
 
 const payload = { name: "Payments API", url: "https://status.example.test/health", method: "GET", expectedStatus: 200, timeoutMs: 5000, latencyThresholdMs: 800, checkIntervalMinutes: 5, enabled: true };
 async function json(response: Response) { return response.json() as Promise<Record<string, unknown>>; }
@@ -12,13 +13,18 @@ beforeEach(async () => {
 	await env.DB.prepare("DELETE FROM check_results").run();
 	await env.DB.prepare("DELETE FROM monitoring_jobs").run();
 	await env.DB.prepare("DELETE FROM endpoints").run();
+	await env.DB.prepare("DELETE FROM sessions").run();
+	await env.DB.prepare("DELETE FROM oauth_states").run();
+	await env.DB.prepare("DELETE FROM workspace_memberships").run();
+	await env.DB.prepare("DELETE FROM users").run();
 	await env.DB.prepare("DELETE FROM workspaces WHERE id <> ?").bind("00000000-0000-4000-8000-000000000001").run();
+	await installTestSession();
 });
 
 describe("endpoint validation", () => {
 	it("rejects credentials and private targets with a consistent envelope", async () => {
 		for (const url of ["https://user:pass@example.com", "http://127.0.0.1/admin", "ftp://example.com"]) {
-			const response = await SELF.fetch("https://app.test/api/endpoints", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...payload, url }) });
+			const response = await apiFetch("https://app.test/api/endpoints", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...payload, url }) });
 			expect(response.status).toBe(400);
 			expect(await json(response)).toMatchObject({ error: { code: "VALIDATION_ERROR" } });
 		}
@@ -27,29 +33,29 @@ describe("endpoint validation", () => {
 
 describe("D1 endpoint API", () => {
 	it("creates, reads, updates, and deletes an endpoint", async () => {
-		const createdResponse = await SELF.fetch("https://app.test/api/endpoints", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+		const createdResponse = await apiFetch("https://app.test/api/endpoints", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
 		expect(createdResponse.status).toBe(201);
 		const created = (await json(createdResponse)).data as { id: string; name: string };
 		expect(created.name).toBe(payload.name);
-		const listed = (await json(await SELF.fetch("https://app.test/api/endpoints"))).data as unknown[];
+		const listed = (await json(await apiFetch("https://app.test/api/endpoints"))).data as unknown[];
 		expect(listed).toHaveLength(1);
-		const updated = await SELF.fetch(`https://app.test/api/endpoints/${created.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Billing API" }) });
+		const updated = await apiFetch(`https://app.test/api/endpoints/${created.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Billing API" }) });
 		expect((await json(updated)).data).toMatchObject({ name: "Billing API" });
-		expect((await SELF.fetch(`https://app.test/api/endpoints/${created.id}`, { method: "DELETE" })).status).toBe(204);
-		expect((await json(await SELF.fetch("https://app.test/api/endpoints"))).data).toEqual([]);
+		expect((await apiFetch(`https://app.test/api/endpoints/${created.id}`, { method: "DELETE" })).status).toBe(204);
+		expect((await json(await apiFetch("https://app.test/api/endpoints"))).data).toEqual([]);
 	});
 
 	it("does not expose another workspace's endpoint", async () => {
 		await env.DB.prepare("INSERT INTO workspaces (id, name) VALUES (?, ?)").bind("other", "Other").run();
 		await env.DB.prepare("INSERT INTO endpoints (id, workspace_id, name, url, method, expected_status, timeout_ms, latency_threshold_ms, check_interval_minutes, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("foreign", "other", "Secret", "https://other.example.test", "GET", 200, 5000, 800, 5, 1).run();
-		expect((await json(await SELF.fetch("https://app.test/api/endpoints"))).data).toEqual([]);
-		expect((await SELF.fetch("https://app.test/api/endpoints/foreign")).status).toBe(404);
+		expect((await json(await apiFetch("https://app.test/api/endpoints"))).data).toEqual([]);
+		expect((await apiFetch("https://app.test/api/endpoints/foreign")).status).toBe(404);
 	});
 
 	it("creates an asynchronous manual job, polls it, and persists one result", async () => {
-		const createResponse = await SELF.fetch("https://app.test/api/endpoints", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+		const createResponse = await apiFetch("https://app.test/api/endpoints", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
 		const id = ((await json(createResponse)).data as { id: string }).id;
-		const checkResponse = await SELF.fetch(`https://app.test/api/endpoints/${id}/check`, { method: "POST" });
+		const checkResponse = await apiFetch(`https://app.test/api/endpoints/${id}/check`, { method: "POST" });
 		expect(checkResponse.status).toBe(202);
 		const queued = (await json(checkResponse)).data as { jobId: string; status: string };
 		expect(queued.status).toBe("QUEUED");
@@ -57,13 +63,13 @@ describe("D1 endpoint API", () => {
 		expect(row).not.toBeNull();
 		const message: MonitoringQueueMessage = { version: 1, jobId: queued.jobId, workspaceId: DEFAULT_WORKSPACE_ID, endpointId: id, scheduledFor: row!.scheduled_for, source: "MANUAL" };
 		expect(await processQueueMessage(env, message, 1)).toBe("ack");
-		const polled = (await json(await SELF.fetch(`https://app.test/api/jobs/${queued.jobId}`))).data as { status: string; result: unknown };
+		const polled = (await json(await apiFetch(`https://app.test/api/jobs/${queued.jobId}`))).data as { status: string; result: unknown };
 		expect(polled).toMatchObject({ status: "COMPLETED", result: { status: "HEALTHY", actualStatusCode: 200 } });
 		expect(await processQueueMessage(env, message, 2)).toBe("ack");
-		const history = (await json(await SELF.fetch(`https://app.test/api/endpoints/${id}/results?limit=50`))).data as unknown[];
+		const history = (await json(await apiFetch(`https://app.test/api/endpoints/${id}/results?limit=50`))).data as unknown[];
 		expect(history).toHaveLength(1);
 		expect(history[0]).toMatchObject({ id: expect.any(String), status: "HEALTHY", actualStatusCode: 200, checkedAt: expect.any(String), latencyMs: expect.any(Number) });
-		const refreshed = (await json(await SELF.fetch("https://app.test/api/endpoints"))).data as Array<{ id: string; latestResult: unknown; activeJobStatus: unknown }>;
+		const refreshed = (await json(await apiFetch("https://app.test/api/endpoints"))).data as Array<{ id: string; latestResult: unknown; activeJobStatus: unknown }>;
 		expect(refreshed.find((endpoint) => endpoint.id === id)).toMatchObject({ latestResult: { status: "HEALTHY" }, activeJobStatus: null });
 	});
 
@@ -72,7 +78,7 @@ describe("D1 endpoint API", () => {
 		await env.DB.prepare("INSERT INTO endpoints (id, workspace_id, name, url, method, expected_status, timeout_ms, latency_threshold_ms, check_interval_minutes, enabled) VALUES ('foreign-endpoint', 'other-jobs', 'Foreign', 'https://example.test', 'GET', 200, 5000, 800, 5, 1)").run();
 		const now = new Date().toISOString();
 		await env.DB.prepare("INSERT INTO monitoring_jobs (id, workspace_id, endpoint_id, deduplication_key, source, status, scheduled_for, created_at, updated_at) VALUES ('foreign-job', 'other-jobs', 'foreign-endpoint', 'foreign-key', 'MANUAL', 'QUEUED', ?, ?, ?)").bind(now, now, now).run();
-		expect((await SELF.fetch("https://app.test/api/jobs/foreign-job")).status).toBe(404);
+		expect((await apiFetch("https://app.test/api/jobs/foreign-job")).status).toBe(404);
 	});
 });
 

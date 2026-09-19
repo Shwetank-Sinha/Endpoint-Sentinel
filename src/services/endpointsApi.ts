@@ -6,14 +6,20 @@ export interface EndpointPayload {
 }
 
 interface ErrorEnvelope { error?: { code?: string; message?: string; requestId?: string } }
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+let activeWorkspaceId: string | null = null;
+export class ApiClientError extends Error { constructor(message: string, readonly status: number, readonly code?: string) { super(message); } }
+export function setActiveWorkspace(id: string | null): void { activeWorkspaceId = id; }
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	let response: Response;
-	try { response = await fetch(path, init); } catch { throw new Error("Could not reach the Endpoint Sentinel API."); }
+	const headers = new Headers(init?.headers); if (activeWorkspaceId && !path.startsWith("/api/auth/")) headers.set("X-Workspace-ID", activeWorkspaceId);
+	try { response = await fetch(path, { ...init, headers, credentials: "same-origin" }); } catch { throw new Error("Could not reach the Endpoint Sentinel API."); }
 	if (!response.ok) {
 		let envelope: ErrorEnvelope = {};
 		try { envelope = await response.json() as ErrorEnvelope; } catch { /* use status fallback */ }
 		const suffix = envelope.error?.requestId ? ` (request ${envelope.error.requestId})` : "";
-		throw new Error(`${envelope.error?.message ?? `Request failed with HTTP ${response.status}.`}${suffix}`);
+		const error = new ApiClientError(`${envelope.error?.message ?? `Request failed with HTTP ${response.status}.`}${suffix}`, response.status, envelope.error?.code);
+		if (response.status === 401 && path !== "/api/auth/session") window.dispatchEvent(new Event("endpoint-sentinel:unauthorized"));
+		throw error;
 	}
 	if (response.status === 204) return undefined as T;
 	const envelope = await response.json() as { data?: T };
@@ -30,6 +36,15 @@ export const endpointsApi = {
 	check: (id: string) => request<{ jobId: string; status: "QUEUED" }>(`/api/endpoints/${encodeURIComponent(id)}/check`, { method: "POST" }),
 	job: (id: string) => request<MonitoringJob>(`/api/jobs/${encodeURIComponent(id)}`),
 	results: (id: string, limit = 50) => request<CheckResult[]>(`/api/endpoints/${encodeURIComponent(id)}/results?limit=${limit}`),
+};
+
+export interface AuthUser { id: string; githubId: number; githubLogin: string; displayName: string | null; avatarUrl: string | null }
+export interface WorkspaceAccess { id: string; name: string; slug: string; role: "OWNER" | "MEMBER" }
+export interface AuthSession { user: AuthUser; workspaces: WorkspaceAccess[] }
+export const authApi = {
+	session: () => request<AuthSession>("/api/auth/session"),
+	logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+	createWorkspace: (name: string) => request<WorkspaceAccess>("/api/workspaces", jsonInit("POST", { name })),
 };
 
 export interface IncidentFilters { status?: IncidentStatus | ""; severity?: IncidentSeverity | ""; endpointId?: string; limit?: number; cursor?: string }
