@@ -81,6 +81,7 @@ async function incidentRoute(request: Request, env: Env, url: URL, workspace: Wo
 }
 async function route(request: Request, env: Env): Promise<Response> {
 	const url = new URL(request.url), path = url.pathname;
+	if (!path.startsWith("/api/")) return env.ASSETS.fetch(request);
 	if (["/api/demo/healthy", "/api/demo/slow", "/api/demo/failing"].includes(path)) { if (request.method !== "GET") throw new ApiError(405, "METHOD_NOT_ALLOWED", `Method ${request.method} not allowed.`); return handleDemo(path); }
 	if (path === "/api/auth/github") { if (request.method !== "GET") throw new ApiError(405, "METHOD_NOT_ALLOWED", `Method ${request.method} not allowed.`); return beginGithub(request, env); }
 	if (path === "/api/auth/github/callback") { if (request.method !== "GET") throw new ApiError(405, "METHOD_NOT_ALLOWED", `Method ${request.method} not allowed.`); return githubCallback(request, env); }
