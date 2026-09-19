@@ -95,7 +95,17 @@ npx wrangler secret put ALERT_WEBHOOK_URL
 
 OAuth state is random, hashed in D1, expiring, and single-use. The authorization code is exchanged server-side, the GitHub profile is retained, and the access token is discarded. Browser sessions use random opaque `HttpOnly; Secure; SameSite=Lax` cookies; only SHA-256 token hashes are stored. Sessions expire server-side, rotate after login, and are revoked on logout. Cookie-authenticated mutations require an exact matching `Origin`, return paths are local-only, and API responses carry restrictive security headers.
 
-`OWNER` and `MEMBER` may operate monitors and incidents. Only `OWNER` may list or administer membership. An owner can add an existing user by GitHub login after that user has signed in once; invitation delivery is intentionally not implemented. The client-supplied `X-Workspace-ID` only selects from server-verified memberships. Endpoints, jobs, results, incidents, events, alerts, and members remain tenant-isolated. Cron and queue consumers use persisted workspace identity and require no browser session.
+`OWNER` and `MEMBER` may operate monitors and incidents. Only `OWNER` may list or administer membership. The client-supplied `X-Workspace-ID` only selects from server-verified memberships. Endpoints, jobs, results, incidents, events, alerts, and members remain tenant-isolated. Cron and queue consumers use persisted workspace identity and require no browser session.
+
+## Team invitations
+
+Workspace owners can open **Team**, enter a GitHub username, choose an expiry of 1, 3, 7, or 14 days, and copy the resulting link for private delivery. Endpoint Sentinel does not send email or external messages. Invitation links are credentials and must be shared privately with only the named teammate.
+
+Invitation tokens contain 256 bits of randomness. The raw token is returned once when an invitation is created and is never included in administrative invitation lists, audit events, or logs. D1 stores only its SHA-256 hash. Invitations are single-use, default to seven days, grant only the `MEMBER` role, and can be revoked by an owner. At most 50 pending invitations are allowed per workspace, and only one pending invitation may exist for the same normalized GitHub login in a workspace.
+
+The recipient opens `/invite/<token>`. If signed out, the validated invitation path is preserved through GitHub OAuth. Acceptance requires the authenticated GitHub login to match the invited login case-insensitively, so possession of a stolen link by a different account is insufficient. Expired, revoked, accepted, malformed, and reused invitations cannot grant additional access. Successful acceptance adds an idempotent membership, records a sanitized audit event, selects the shared workspace, and opens its dashboard.
+
+Owners may change roles or remove members. Membership authorization is checked from D1 on every request, so removal takes effect immediately without deleting the user's identity, sessions, or memberships in other workspaces. Atomic owner-count guards prevent removing or demoting the final owner. Audit events cover invitation creation, revocation and acceptance, member removal, and role changes without tokens, cookies, or OAuth values.
 
 ## Local development
 
@@ -153,7 +163,7 @@ npx wrangler deploy
 npx wrangler deployments list
 ```
 
-Migration `0004_auth_workspaces.sql` must follow `0003_incidents_alerts.sql`; it preserves all existing monitoring and incident data. Never recreate D1. If alerts are intentionally disabled, omit only `ALERT_WEBHOOK_URL`. Verification after deployment:
+Migration `0005_team_invitations.sql` must follow `0004_auth_workspaces.sql`; it adds invitations and workspace audit events without changing existing monitoring or incident ownership. Never recreate D1. If alerts are intentionally disabled, omit only `ALERT_WEBHOOK_URL`. Verification after deployment:
 
 ```powershell
 npx wrangler deployments list
@@ -167,4 +177,4 @@ npx wrangler d1 execute endpoint-sentinel --remote --command "SELECT incident_id
 
 Endpoint targets remain HTTP/HTTPS-only; credential-bearing URLs and local/private/reserved literal addresses are rejected; redirects are revalidated; timeouts are enforced; response bodies are discarded; SQL is parameterized; and logs exclude webhook secrets and target URLs. A network-level egress policy is still recommended against DNS rebinding.
 
-Workspace invitations/removal, organization synchronization, additional OAuth providers, custom endpoint headers/bodies, secret storage for endpoint credentials, public status pages, alert-channel management, retention controls, and automated DLQ replay remain future work. A GitHub user must sign in once before an owner can add that account. Incident thresholds are Worker-wide environment settings rather than per-endpoint settings. Duration and next-check values shown in the browser are estimates based on persisted timestamps.
+Email delivery, organization synchronization, ownership-transfer workflows, additional OAuth providers, custom endpoint headers/bodies, secret storage for endpoint credentials, public status pages, alert-channel management, retention controls, and automated DLQ replay remain future work. Invitations grant only `MEMBER`; owners must explicitly promote a member while another owner remains. Incident thresholds are Worker-wide environment settings rather than per-endpoint settings. Duration and next-check values shown in the browser are estimates based on persisted timestamps.

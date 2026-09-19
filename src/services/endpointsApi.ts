@@ -41,10 +41,23 @@ export const endpointsApi = {
 export interface AuthUser { id: string; githubId: number; githubLogin: string; displayName: string | null; avatarUrl: string | null }
 export interface WorkspaceAccess { id: string; name: string; slug: string; role: "OWNER" | "MEMBER" }
 export interface AuthSession { user: AuthUser; workspaces: WorkspaceAccess[] }
+export interface WorkspaceMember { id: string; githubLogin: string; displayName: string | null; avatarUrl: string | null; role: "OWNER" | "MEMBER"; createdAt: string }
+export interface WorkspaceInvitation { id: string; invitedGithubLogin: string; role: "MEMBER"; status: "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED"; invitedBy: { githubLogin: string; displayName: string | null }; expiresAt: string; acceptedAt: string | null; revokedAt: string | null; createdAt: string }
+export interface InvitationDetail { invitedGithubLogin: string; status: WorkspaceInvitation["status"]; expiresAt: string; matchesCurrentUser: boolean; workspace?: { id: string; name: string }; role?: "MEMBER"; invitedBy?: { githubLogin: string; displayName: string | null } }
 export const authApi = {
 	session: () => request<AuthSession>("/api/auth/session"),
 	logout: () => request<void>("/api/auth/logout", { method: "POST" }),
 	createWorkspace: (name: string) => request<WorkspaceAccess>("/api/workspaces", jsonInit("POST", { name })),
+};
+export const teamApi = {
+	members: (workspaceId: string) => request<WorkspaceMember[]>(`/api/workspaces/${encodeURIComponent(workspaceId)}/members`),
+	updateMember: (workspaceId: string, userId: string, role: "OWNER" | "MEMBER") => request<{ userId: string; role: "OWNER" | "MEMBER" }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`, jsonInit("PATCH", { role })),
+	removeMember: (workspaceId: string, userId: string) => request<void>(`/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
+	invitations: (workspaceId: string) => request<WorkspaceInvitation[]>(`/api/workspaces/${encodeURIComponent(workspaceId)}/invitations`),
+	createInvitation: (workspaceId: string, githubLogin: string, expiryDays = 7) => request<WorkspaceInvitation & { invitationUrl: string }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/invitations`, jsonInit("POST", { githubLogin, role: "MEMBER", expiryDays })),
+	revokeInvitation: (workspaceId: string, invitationId: string) => request<void>(`/api/workspaces/${encodeURIComponent(workspaceId)}/invitations/${encodeURIComponent(invitationId)}`, { method: "DELETE" }),
+	invitation: (token: string) => request<InvitationDetail>(`/api/invitations/${encodeURIComponent(token)}`),
+	acceptInvitation: (token: string) => request<{ accepted: boolean; alreadyAccepted: boolean; workspace: { id: string; name: string }; role: "MEMBER" }>(`/api/invitations/${encodeURIComponent(token)}/accept`, { method: "POST" }),
 };
 
 export interface IncidentFilters { status?: IncidentStatus | ""; severity?: IncidentSeverity | ""; endpointId?: string; limit?: number; cursor?: string }
