@@ -111,6 +111,11 @@ export async function recoverStaleAlerts(env: IncidentEnv, at = new Date()): Pro
 function webhookBody(format: string, incident: IncidentRow, event: EventRow, endpoint: EndpointRow, result: ResultRow | null): unknown {
 	const durationSeconds = incident.resolved_at ? Math.max(0, Math.round((Date.parse(incident.resolved_at) - Date.parse(incident.started_at)) / 1000)) : null;
 	const data = { event: event.event_type, incidentId: incident.id, endpoint: endpoint.name, severity: incident.severity, status: incident.status, httpStatus: result?.status_code ?? null, latencyMs: result?.latency_ms ?? null, startedAt: incident.started_at, reason: incident.summary, recoveryDurationSeconds: durationSeconds };
+	if (format === "discord" && event.event_type === "RESOLVED") {
+		const recovered = event.result_id !== null && result?.outcome === "HEALTHY";
+		const resolution = recovered ? "recovered" : "incident resolved";
+		return { content: `Endpoint Sentinel: ${endpoint.name} — ${resolution}`, embeds: [{ title: `${endpoint.name} ${resolution}`, description: event.message, color: 0x1e8e4e, fields: [{ name: "Incident", value: incident.id }, { name: "Started", value: incident.started_at }, { name: "HTTP status", value: String(result?.status_code ?? "No response"), inline: true }, { name: "Latency", value: result ? `${result.latency_ms} ms` : "Unavailable", inline: true }, ...(durationSeconds === null ? [] : [{ name: "Recovery duration", value: `${durationSeconds} seconds` }])] }] };
+	}
 	if (format === "discord") return { content: `Endpoint Sentinel: ${endpoint.name} — ${event.event_type === "RESOLVED" ? "recovered" : incident.severity}`, embeds: [{ title: incident.title, description: incident.summary, color: event.event_type === "RESOLVED" ? 0x1e8e4e : incident.severity === "CRITICAL" ? 0xc1392b : 0x9c6a12, fields: [{ name: "Incident", value: incident.id }, { name: "Started", value: incident.started_at }, { name: "HTTP status", value: String(result?.status_code ?? "No response"), inline: true }, { name: "Latency", value: result ? `${result.latency_ms} ms` : "Unavailable", inline: true }, ...(durationSeconds === null ? [] : [{ name: "Recovery duration", value: `${durationSeconds} seconds` }])] }] };
 	return data;
 }

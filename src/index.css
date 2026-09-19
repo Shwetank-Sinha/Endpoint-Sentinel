@@ -784,7 +784,21 @@ body {
 .es-timeline time, .es-alert-list span, .es-alert-list small { color: var(--color-navy-muted); font-size: .78rem; }
 .es-timeline p { margin: .2rem 0 0; }
 
+.es-auth { min-height: 100vh; display: grid; place-items: center; padding: 1.5rem; }
+.es-auth-card { width: min(100%, 440px); display: grid; gap: 1rem; padding: 2.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-card); box-shadow: var(--shadow-card); text-align: center; }
+.es-auth-card h1, .es-auth-card p { margin: 0; }
+.es-auth-card small { color: var(--color-navy-muted); }
+.es-auth-mark { width: 3rem; height: 3rem; display: grid; place-items: center; margin: 0 auto; border-radius: 12px; color: white; background: var(--color-navy); font-weight: 800; }
+.es-auth-login { margin-top: .5rem; text-decoration: none; }
+.es-account-bar { max-width: 1120px; margin: 0 auto; padding: 1rem 1.5rem 0; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.es-account-user, .es-account-actions, .es-account-actions label { display: flex; align-items: center; gap: .65rem; }
+.es-account-user img, .es-account-user > span { width: 2.25rem; height: 2.25rem; border-radius: 50%; display: grid; place-items: center; background: var(--color-accent-soft); object-fit: cover; }
+.es-account-user div { display: grid; }
+.es-account-user small { color: var(--color-navy-muted); }
+.es-account-actions select { font: inherit; padding: .5rem; border: 1px solid var(--color-border); border-radius: 8px; background: white; }
+
 @media (max-width: 720px) {
+	.es-account-bar, .es-account-actions { align-items: stretch; flex-direction: column; }
 	.es-incident-summary { grid-template-columns: 1fr; }
 	.es-incident-row { grid-template-columns: 1fr; }
 	.es-incident-row dl { flex-wrap: wrap; }
