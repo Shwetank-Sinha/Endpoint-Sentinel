@@ -1,13 +1,13 @@
 name = "endpoint-sentinel"
 main = "worker/index.ts"
 compatibility_date = "2026-09-01"
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = [ "nodejs_compat" ]
 
 [[d1_databases]]
 binding = "DB"
 database_name = "endpoint-sentinel"
 database_id = "443a1db2-5619-4c6d-8690-8d3d8a86b142"
-migrations_dir = "migrations"
+migrations_dir = "../../migrations"
 
 [[queues.producers]]
 binding = "MONITORING_QUEUE"
@@ -32,13 +32,13 @@ max_batch_timeout = 5
 max_retries = 3
 
 [triggers]
-crons = ["* * * * *"]
+crons = [ "* * * * *" ]
 
 [vars]
 MAX_JOBS_PER_SCHEDULE = "100"
 INCIDENT_FAILURE_THRESHOLD = "2"
 INCIDENT_RECOVERY_THRESHOLD = "1"
-ALERT_WEBHOOK_FORMAT = "generic"
+ALERT_WEBHOOK_FORMAT = "discord"
 
 [observability]
 enabled = true

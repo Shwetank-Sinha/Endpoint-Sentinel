@@ -130,7 +130,7 @@ export async function processAlertMessage(env: IncidentEnv, raw: unknown, attemp
 	const alertResultId = event.result_id ?? incident.latest_result_id;
 	const result = alertResultId ? await env.DB.prepare("SELECT id,endpoint_id,checked_at,status_code,latency_ms,outcome,error_message,incident_evaluated_at FROM check_results WHERE id=?").bind(alertResultId).first<ResultRow>() : null;
 	const controller = new AbortController(), timer = setTimeout(() => controller.abort(), ALERT_TIMEOUT_MS); let response: Response | null = null;
-	try { response = await fetch(env.ALERT_WEBHOOK_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(webhookBody(env.ALERT_WEBHOOK_FORMAT, incident, event, endpoint, result)), signal: controller.signal, redirect: "error" }); void response.body?.cancel().catch(() => undefined); }
+	try { response = await fetch(env.ALERT_WEBHOOK_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(webhookBody(env.ALERT_WEBHOOK_FORMAT, incident, event, endpoint, result)), signal: controller.signal, redirect: "manual" }); void response.body?.cancel().catch(() => undefined); }
 	catch (error) { clearTimeout(timer); const detail = error instanceof Error && error.name === "AbortError" ? "Webhook request timed out." : cleanError(error); if (attempts >= MAX_ALERT_ATTEMPTS) { await env.DB.prepare("UPDATE alert_deliveries SET status='FAILED',last_error=?,updated_at=? WHERE id=?").bind(detail, now, delivery.id).run(); return "ack"; } await env.DB.prepare("UPDATE alert_deliveries SET last_error=?,updated_at=? WHERE id=? AND status='QUEUED'").bind(detail, now, delivery.id).run(); return "retry"; }
 	finally { clearTimeout(timer); }
 	const status = response.status;
