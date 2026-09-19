@@ -1,4 +1,4 @@
-import type { CheckResult, EndpointRecord, HttpMethod, MonitoringJob } from "../types/monitoring";
+import type { AlertDelivery, CheckResult, EndpointRecord, HttpMethod, IncidentDetail, IncidentEvent, IncidentPage, IncidentSeverity, IncidentStatus, MonitoringJob } from "../types/monitoring";
 
 export interface EndpointPayload {
 	name: string; url: string; method: HttpMethod; expectedStatus: number;
@@ -30,4 +30,16 @@ export const endpointsApi = {
 	check: (id: string) => request<{ jobId: string; status: "QUEUED" }>(`/api/endpoints/${encodeURIComponent(id)}/check`, { method: "POST" }),
 	job: (id: string) => request<MonitoringJob>(`/api/jobs/${encodeURIComponent(id)}`),
 	results: (id: string, limit = 50) => request<CheckResult[]>(`/api/endpoints/${encodeURIComponent(id)}/results?limit=${limit}`),
+};
+
+export interface IncidentFilters { status?: IncidentStatus | ""; severity?: IncidentSeverity | ""; endpointId?: string; limit?: number; cursor?: string }
+const incidentQuery = (filters: IncidentFilters) => { const query = new URLSearchParams(); if (filters.status) query.set("status", filters.status); if (filters.severity) query.set("severity", filters.severity); if (filters.endpointId) query.set("endpointId", filters.endpointId); if (filters.limit) query.set("limit", String(filters.limit)); if (filters.cursor) query.set("cursor", filters.cursor); return query.toString(); };
+
+export const incidentsApi = {
+	list: (filters: IncidentFilters = {}) => request<IncidentPage>(`/api/incidents?${incidentQuery(filters)}`),
+	get: (id: string) => request<IncidentDetail>(`/api/incidents/${encodeURIComponent(id)}`),
+	events: (id: string) => request<IncidentEvent[]>(`/api/incidents/${encodeURIComponent(id)}/events`),
+	alerts: (id: string) => request<AlertDelivery[]>(`/api/incidents/${encodeURIComponent(id)}/alerts`),
+	acknowledge: (id: string) => request<IncidentDetail>(`/api/incidents/${encodeURIComponent(id)}/acknowledge`, { method: "POST" }),
+	resolve: (id: string) => request<IncidentDetail>(`/api/incidents/${encodeURIComponent(id)}/resolve`, { method: "POST" }),
 };
