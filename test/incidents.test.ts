@@ -89,8 +89,32 @@ describe("webhook alert delivery", () => {
 		const webhook = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 204 }));
 		const item = await firstDelivery("success-hook"), configured = testEnv("https://webhook-success.example.test/token-secret");
 		expect(await processAlertMessage(configured, item.message, 1)).toBe("ack");
+		expect(webhook).toHaveBeenCalledWith("https://webhook-success.example.test/token-secret", expect.objectContaining({ redirect: "manual" }));
 		expect(await processAlertMessage(configured, item.message, 2)).toBe("ack");
 		expect(await env.DB.prepare("SELECT status,attempt_count,response_status FROM alert_deliveries WHERE id=?").bind(item.delivery.id).first()).toMatchObject({ status: "DELIVERED", attempt_count: 1, response_status: 204 });
+		webhook.mockRestore();
+	});
+
+	it("uses accurate Discord wording for automatic recovery and manual resolution", async () => {
+		const webhook = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
+		const incidentId = await openIncident("recovery-copy");
+		await result("recovery-copy", "recovery-copy-critical", "CRITICAL", "2026-09-19T10:03:00.000Z");
+		await result("recovery-copy", "recovery-copy-healthy", "HEALTHY", "2026-09-19T10:04:00.000Z");
+		const recovery = await env.DB.prepare("SELECT a.id,a.incident_event_id FROM alert_deliveries a JOIN incident_events e ON e.id=a.incident_event_id WHERE a.incident_id=? AND e.event_type='RESOLVED'").bind(incidentId).first<{ id: string; incident_event_id: string }>();
+		await processAlertMessage({ ...testEnv("https://webhook-success.example.test"), ALERT_WEBHOOK_FORMAT: "discord" }, { version: 1, deliveryId: recovery!.id, incidentId, incidentEventId: recovery!.incident_event_id }, 1);
+		const recoveryBody = JSON.parse(String(webhook.mock.calls.at(-1)?.[1]?.body)) as { content: string; embeds: Array<{ title: string; description: string; fields: Array<{ name: string; value: string }> }> };
+		expect(recoveryBody.content).toContain("recovered");
+		expect(recoveryBody.embeds[0]).toMatchObject({ title: "Endpoint recovery-copy recovered", description: "Endpoint recovered after healthy monitoring results." });
+		expect(recoveryBody.embeds[0]?.title.toLowerCase()).not.toContain("critical");
+		expect(recoveryBody.embeds[0]?.fields).toContainEqual({ name: "Recovery duration", value: "180 seconds" });
+
+		const manualId = await openIncident("manual-copy");
+		await resolveIncident(testEnv(), DEFAULT_WORKSPACE_ID, manualId, new Date("2026-09-19T10:05:00.000Z"));
+		const manual = await env.DB.prepare("SELECT a.id,a.incident_event_id FROM alert_deliveries a JOIN incident_events e ON e.id=a.incident_event_id WHERE a.incident_id=? AND e.event_type='RESOLVED'").bind(manualId).first<{ id: string; incident_event_id: string }>();
+		await processAlertMessage({ ...testEnv("https://webhook-success.example.test"), ALERT_WEBHOOK_FORMAT: "discord" }, { version: 1, deliveryId: manual!.id, incidentId: manualId, incidentEventId: manual!.incident_event_id }, 1);
+		const manualBody = JSON.parse(String(webhook.mock.calls.at(-1)?.[1]?.body)) as { content: string; embeds: Array<{ title: string; description: string }> };
+		expect(manualBody.content).toContain("incident resolved");
+		expect(manualBody.embeds[0]).toMatchObject({ title: "Endpoint manual-copy incident resolved", description: "Incident resolved manually." });
 		webhook.mockRestore();
 	});
 
