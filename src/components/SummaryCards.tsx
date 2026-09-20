@@ -34,9 +34,10 @@ export default function SummaryCards({ summary }: SummaryCardsProps) {
 				<div
 					key={card.key}
 					className={`es-summary-card es-summary-card--${card.tone}`}
+					data-active={typeof card.value === 'number' && card.value > 0}
 				>
 					<span className="es-summary-label">{card.label}</span>
-					<span className="es-summary-value">{card.value}</span>
+					<span className="es-summary-value">{card.key === 'latency' ? <>{summary.averageLatencyMs ?? '—'} <small>ms</small></> : card.value}</span>
 				</div>
 			))}
 		</section>
