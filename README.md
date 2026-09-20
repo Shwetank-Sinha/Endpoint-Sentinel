@@ -1,6 +1,36 @@
-**[LIVE DEPLOYMENT: [https://endpoint-sentinel.endpoint-sentinel.workers.dev/](https://endpoint-sentinel.endpoint-sentinel.workers.dev/)]**
+<div align="center">
 
-**[JURY ACCESS NOTICE: GitHub authentication has been temporarily disabled for this evaluation build so Geeks2Code hackathon jurors can access the deployed application without signing in. GitHub authentication remains part of the production configuration and can be easily restored with a single "false" flag(GitHub Oauth Flag) turning "true".]**
+## **<ins>LIVE DEPLOYMENT</ins>**
+
+### **[https://endpoint-sentinel.endpoint-sentinel.workers.dev](https://endpoint-sentinel.endpoint-sentinel.workers.dev/)**
+
+</div>
+
+---
+
+### **<ins>JURY ACCESS NOTICE</ins>**
+
+> **GitHub authentication has been temporarily disabled for the Geeks2Code hackathon evaluation so that jurors can access and test the deployed application without signing in.**
+>
+> **Authentication remains fully implemented in the production configuration. After evaluation, it can be restored by setting the `PUBLIC_JURY_DEMO` flag to `false` and redeploying the application.**
+
+---
+
+### **<ins>CLOUDFLARE INFRASTRUCTURE VERIFICATION</ins>**
+
+> **Endpoint Sentinel is deployed using Cloudflare Workers, D1, Queues and Cron Triggers. Because the Cloudflare management dashboard is private and requires account credentials, those credentials cannot be shared publicly. The screenshot below is provided as verification of the deployed Cloudflare infrastructure.**
+
+<img width="1911" height="962" alt="Endpoint Sentinel Cloudflare infrastructure dashboard" src="https://github.com/user-attachments/assets/c328a551-86be-4c4a-9b94-9ab33f7f6e96" />
+
+---
+
+### **<ins>CURRENT DEVELOPMENT WORK</ins>**
+
+> **Cloudflare Workers cannot directly access APIs running on `localhost` or inside a private network. To solve this properly, we are designing an Endpoint Sentinel Local Agent that will run inside the developer’s machine or private network, execute checks locally and securely submit the results to Endpoint Sentinel.**
+>
+> **We are also working on automated setup and Docker packaging to simplify installation, local development and self-deployment for small engineering teams. These capabilities were outside the available hackathon development window :( and are therefore documented as the next implementation milestone rather than being represented as completed features in this submission :).**
+
+---
 
 # Endpoint Sentinel
 
