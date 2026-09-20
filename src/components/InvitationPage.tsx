@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { teamApi, type AuthSession, type InvitationDetail } from '../services/endpointsApi';
+import { teamApi, type AuthenticatedSession, type InvitationDetail } from '../services/endpointsApi';
 import Icon from './Icon';
-interface Props { token: string; session: AuthSession; onAccepted: (workspaceId: string) => void; onCancel: () => void }
+interface Props { token: string; session: AuthenticatedSession; onAccepted: (workspaceId: string) => void; onCancel: () => void }
 const message = (error: unknown) => error instanceof Error ? error.message : 'The invitation could not be loaded.';
 export default function InvitationPage({ token, session, onAccepted, onCancel }: Props) {
   const [invitation, setInvitation] = useState<InvitationDetail | null>(null), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);

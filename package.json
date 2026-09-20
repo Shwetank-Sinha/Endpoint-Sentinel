@@ -11,7 +11,9 @@
     "cf-typegen": "wrangler types",
     "test": "vitest run",
     "test:browser": "node test/browser/qa.mjs",
+    "test:jury": "node test/browser/jury-smoke.mjs",
     "test:visual": "node test/browser/qa.mjs --captures",
+    "test:bundle": "node test/client-bundle-secrets.mjs",
     "typecheck": "tsc -b"
   },
   "dependencies": {

@@ -83,6 +83,8 @@ code, time { font-family: var(--font-mono); }
 .es-title { font-size: 29px; font-weight: 600; letter-spacing: -.045em; margin: 0; }
 .es-subtitle { margin: 9px 0 0; font-size: 13px; color: var(--text-secondary); }
 .es-hero__actions, .es-card__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.es-jury-notice { display: flex; align-items: baseline; gap: 10px; margin: 12px 0 0; padding-left: 10px; border-left: 2px solid var(--accent); color: var(--text-secondary); font-size: 11px; }
+.es-jury-notice strong { color: var(--text-primary); font-size: 12px; }
 .es-refresh { font: 10px var(--font-mono); color: var(--text-muted); margin: 0 0 16px; }
 .es-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-block: 1px solid var(--border-strong); margin-bottom: 24px; }
 .es-summary-card { min-width: 0; padding: 19px 22px 18px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }

@@ -7,6 +7,7 @@ declare module "cloudflare:test" {
 		GITHUB_CLIENT_SECRET: string;
 		BOOTSTRAP_OWNER_GITHUB_LOGIN: string;
 		APP_BASE_URL: string;
+		PUBLIC_JURY_DEMO: string;
 	}
 }
 export {};

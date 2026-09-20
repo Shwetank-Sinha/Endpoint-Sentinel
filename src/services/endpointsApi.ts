@@ -40,7 +40,9 @@ export const endpointsApi = {
 
 export interface AuthUser { id: string; githubId: number; githubLogin: string; displayName: string | null; avatarUrl: string | null }
 export interface WorkspaceAccess { id: string; name: string; slug: string; role: "OWNER" | "MEMBER" }
-export interface AuthSession { user: AuthUser; workspaces: WorkspaceAccess[] }
+export interface AuthenticatedSession { user: AuthUser; workspaces: WorkspaceAccess[]; juryMode?: never }
+export interface JurySession { user: null; workspaces: WorkspaceAccess[]; juryMode: true }
+export type AuthSession = AuthenticatedSession | JurySession;
 export interface WorkspaceMember { id: string; githubLogin: string; displayName: string | null; avatarUrl: string | null; role: "OWNER" | "MEMBER"; createdAt: string }
 export interface WorkspaceInvitation { id: string; invitedGithubLogin: string; role: "MEMBER"; status: "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED"; invitedBy: { githubLogin: string; displayName: string | null }; expiresAt: string; acceptedAt: string | null; revokedAt: string | null; createdAt: string }
 export interface InvitationDetail { invitedGithubLogin: string; status: WorkspaceInvitation["status"]; expiresAt: string; matchesCurrentUser: boolean; workspace?: { id: string; name: string }; role?: "MEMBER"; invitedBy?: { githubLogin: string; displayName: string | null } }

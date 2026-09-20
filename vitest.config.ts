@@ -23,7 +23,7 @@ export default defineConfig({
 				if (url.hostname === "webhook-failed.example.test") return new Response(null, { status: 400 });
 				return new Response("ok", { status: 200 });
 			},
-			bindings: { TEST_MIGRATIONS: await readD1Migrations("./migrations"), GITHUB_CLIENT_ID: "test-client-id", GITHUB_CLIENT_SECRET: "test-client-secret", BOOTSTRAP_OWNER_GITHUB_LOGIN: "test-owner", APP_BASE_URL: "https://app.test" },
+			bindings: { TEST_MIGRATIONS: await readD1Migrations("./migrations"), GITHUB_CLIENT_ID: "test-client-id", GITHUB_CLIENT_SECRET: "test-client-secret", BOOTSTRAP_OWNER_GITHUB_LOGIN: "test-owner", APP_BASE_URL: "https://app.test", PUBLIC_JURY_DEMO: "false" },
 		},
 	}))],
 	test: {

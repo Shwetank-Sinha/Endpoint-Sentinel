@@ -5,11 +5,13 @@ export const SESSION_COOKIE = "__Host-endpoint_sentinel_session";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const STATE_TTL_MS = 10 * 60 * 1000;
 
-type AuthEnv = Env & { GITHUB_CLIENT_ID?: string; GITHUB_CLIENT_SECRET?: string; BOOTSTRAP_OWNER_GITHUB_LOGIN?: string; APP_BASE_URL?: string };
+type AuthEnv = Env & { GITHUB_CLIENT_ID?: string; GITHUB_CLIENT_SECRET?: string; BOOTSTRAP_OWNER_GITHUB_LOGIN?: string; APP_BASE_URL?: string; PUBLIC_JURY_DEMO?: string };
 export type WorkspaceRole = "OWNER" | "MEMBER";
 export interface SessionUser { id: string; githubId: number; githubLogin: string; displayName: string | null; avatarUrl: string | null }
 export interface WorkspaceAccess { id: string; name: string; slug: string; role: WorkspaceRole }
 export interface AuthContext { user: SessionUser; workspaces: WorkspaceAccess[] }
+export interface JuryContext { juryMode: true; user: null; workspaces: WorkspaceAccess[] }
+export type RequestContext = AuthContext | JuryContext;
 
 interface SessionRow { token_hash: string; expires_at: string; user_id: string; github_id: number; github_login: string; display_name: string | null; avatar_url: string | null }
 interface GithubUser { id: number; login: string; name?: string | null; avatar_url?: string | null }
@@ -35,7 +37,15 @@ export async function authenticate(request: Request, db: D1Database, at = new Da
 	await db.prepare("UPDATE sessions SET last_seen_at=? WHERE token_hash=? AND last_seen_at<?").bind(now, hash, new Date(at.getTime() - 60 * 60 * 1000).toISOString()).run();
 	return { user: { id: row.user_id, githubId: row.github_id, githubLogin: row.github_login, displayName: row.display_name, avatarUrl: row.avatar_url }, workspaces: await workspacesFor(db, row.user_id) };
 }
-export function workspaceFor(request: Request, auth: AuthContext): WorkspaceAccess {
+export const publicJuryDemoEnabled = (env: AuthEnv): boolean => env.PUBLIC_JURY_DEMO === "true";
+export const isJuryContext = (auth: RequestContext): auth is JuryContext => "juryMode" in auth && auth.juryMode;
+export async function requestContext(request: Request, env: AuthEnv): Promise<RequestContext> {
+	if (!publicJuryDemoEnabled(env)) return authenticate(request, env.DB);
+	const workspace = await env.DB.prepare("SELECT id,name,COALESCE(slug,'default-workspace') slug FROM workspaces WHERE id=?").bind(DEFAULT_WORKSPACE_ID).first<{ id: string; name: string; slug: string }>();
+	if (!workspace) throw new ApiError(503, "SERVICE_UNAVAILABLE", "The jury demo workspace is unavailable.");
+	return { juryMode: true, user: null, workspaces: [{ ...workspace, role: "MEMBER" }] };
+}
+export function workspaceFor(request: Request, auth: Pick<RequestContext, "workspaces">): WorkspaceAccess {
 	const requested = request.headers.get("x-workspace-id");
 	if (requested) { const found = auth.workspaces.find((workspace) => workspace.id === requested); if (!found) throw new ApiError(403, "FORBIDDEN", "You do not have access to that workspace."); return found; }
 	if (auth.workspaces.length === 1) return auth.workspaces[0]!;
@@ -70,10 +80,10 @@ export async function githubCallback(request: Request, env: AuthEnv): Promise<Re
 	const oldToken = cookieValue(request); if (oldToken) await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(await hashToken(oldToken)).run(); const token = randomToken(); await env.DB.prepare("INSERT INTO sessions(token_hash,user_id,expires_at,created_at,last_seen_at) VALUES(?,?,?,?,?)").bind(await hashToken(token), userId, new Date(now.getTime() + SESSION_TTL_MS).toISOString(), timestamp, timestamp).run();
 	return new Response(null, { status: 302, headers: { Location: safeReturnPath(stored.return_to), "Set-Cookie": cookie(token, Math.floor(SESSION_TTL_MS / 1000)) } });
 }
-export async function sessionResponse(request: Request, env: AuthEnv): Promise<Response> { const auth = await authenticate(request, env.DB); return success(auth); }
+export async function sessionResponse(request: Request, env: AuthEnv): Promise<Response> { return success(await requestContext(request, env)); }
 export async function logout(request: Request, env: AuthEnv): Promise<Response> { validateOrigin(request, env); const token = cookieValue(request); if (token) await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(await hashToken(token)).run(); return new Response(null, { status: 204, headers: { "Set-Cookie": clearCookie() } }); }
 
-export async function listWorkspaces(auth: AuthContext): Promise<Response> { return success(auth.workspaces); }
+export async function listWorkspaces(auth: Pick<RequestContext, "workspaces">): Promise<Response> { return success(auth.workspaces); }
 function slugify(name: string): string { return name.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "workspace"; }
 export async function createWorkspace(request: Request, env: AuthEnv, auth: AuthContext): Promise<Response> { validateOrigin(request, env); let body: unknown; try { body = await request.json(); } catch { throw new ApiError(400, "VALIDATION_ERROR", "Request body must be valid JSON."); } if (!isRecord(body) || typeof body.name !== "string" || body.name.trim().length < 2 || body.name.trim().length > 80) throw new ApiError(400, "VALIDATION_ERROR", "Workspace name must be 2-80 characters."); const id = crypto.randomUUID(), now = new Date().toISOString(), name = body.name.trim(), slug = `${slugify(name)}-${id.slice(0, 8)}`; await env.DB.batch([env.DB.prepare("INSERT INTO workspaces(id,name,slug,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?)").bind(id, name, slug, auth.user.id, now, now), env.DB.prepare("INSERT INTO workspace_memberships(workspace_id,user_id,role,created_at,updated_at) VALUES(?,?,'OWNER',?,?)").bind(id, auth.user.id, now, now)]); return success({ id, name, slug, role: "OWNER" }, 201); }
 export async function listMembers(db: D1Database, workspace: WorkspaceAccess): Promise<Response> { if (workspace.role !== "OWNER") throw new ApiError(403, "FORBIDDEN", "Only workspace owners can view members."); const rows = (await db.prepare("SELECT u.id,u.github_login,u.display_name,u.avatar_url,m.role,m.created_at FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=? ORDER BY m.created_at,u.github_login").bind(workspace.id).all()).results; return success(rows.map((row) => ({ id: row.id, githubLogin: row.github_login, displayName: row.display_name, avatarUrl: row.avatar_url, role: row.role, createdAt: row.created_at }))); }

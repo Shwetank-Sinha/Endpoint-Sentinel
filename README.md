@@ -1,3 +1,7 @@
+**[LIVE DEPLOYMENT: [https://endpoint-sentinel.endpoint-sentinel.workers.dev/](https://endpoint-sentinel.endpoint-sentinel.workers.dev/)]**
+
+**[JURY ACCESS NOTICE: GitHub authentication has been temporarily disabled for this evaluation build so hackathon jurors can access the deployed application without signing in. GitHub authentication remains part of the production configuration and will be restored after judging.]**
+
 # Endpoint Sentinel
 
 Self-deployable API monitoring and incident management for small engineering teams, built on Cloudflare Workers, D1, Queues, and Cron Triggers.
