@@ -29,6 +29,8 @@
 > **Cloudflare Workers cannot directly access APIs running on `localhost` or inside a private network. To solve this properly, we are designing an Endpoint Sentinel Local Agent that will run inside the developer’s machine or private network, execute checks locally and securely submit the results to Endpoint Sentinel.**
 >
 > **We are also working on automated setup and Docker packaging to simplify installation, local development and self-deployment for small engineering teams. These capabilities were outside the available hackathon development window :( and are therefore documented as the next implementation milestone rather than being represented as completed features in this submission :).**
+> **<ins>DEMO VIDEO NOTICE</ins>
+The demo video has been slightly accelerated to meet the submission duration limit, as the original demonstration was over seven minutes long. We sincerely apologize for any inconvenience and appreciate your understanding. :(**
 
 ---
 
