@@ -10,7 +10,7 @@
 
 ### **<ins>JURY ACCESS NOTICE</ins>**
 
-> **GitHub authentication has been temporarily disabled for the Geeks2Code hackathon evaluation so that jurors can access and test the deployed application without signing in.**
+> **GitHub authentication has been temporarily disabled for the Geeks2Code hackathon evaluation so that you jurors can access and test the deployed application without signing in.**
 >
 > **Authentication remains fully implemented in the production configuration. After evaluation, it can be restored by setting the `PUBLIC_JURY_DEMO` flag to `false` and redeploying the application.**
 
@@ -29,6 +29,7 @@
 > **Cloudflare Workers cannot directly access APIs running on `localhost` or inside a private network. To solve this properly, we are designing an Endpoint Sentinel Local Agent that will run inside the developer’s machine or private network, execute checks locally and securely submit the results to Endpoint Sentinel.**
 >
 > **We are also working on automated setup and Docker packaging to simplify installation, local development and self-deployment for small engineering teams. These capabilities were outside the available hackathon development window :( and are therefore documented as the next implementation milestone rather than being represented as completed features in this submission :).**
+>
 > **<ins>DEMO VIDEO NOTICE</ins>
 The demo video has been slightly accelerated to meet the submission duration limit, as the original demonstration was over seven minutes long. We sincerely apologize for any inconvenience and appreciate your understanding. :(**
 
