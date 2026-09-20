@@ -1,6 +1,6 @@
 **[LIVE DEPLOYMENT: [https://endpoint-sentinel.endpoint-sentinel.workers.dev/](https://endpoint-sentinel.endpoint-sentinel.workers.dev/)]**
 
-**[JURY ACCESS NOTICE: GitHub authentication has been temporarily disabled for this evaluation build so hackathon jurors can access the deployed application without signing in. GitHub authentication remains part of the production configuration and will be restored after judging.]**
+**[JURY ACCESS NOTICE: GitHub authentication has been temporarily disabled for this evaluation build so Geeks2Code hackathon jurors can access the deployed application without signing in. GitHub authentication remains part of the production configuration and can be easily restored with a single "false" flag(GitHub Oauth Flag) turning "true".]**
 
 # Endpoint Sentinel
 
