@@ -138,7 +138,9 @@ A simple single-process Express monitor can combine scheduling, checking, and AP
 
 ## Next development milestone
 
-The next milestone is a lightweight Private Monitoring Agent that runs inside a developer's machine or internal network, checks localhost/private endpoints, and securely submits results to the existing incident pipeline without exposing those services publicly. Planned delivery includes Docker packaging and a simplified setup flow.
+Cloudflare Workers cannot directly access APIs running on localhost or inside a private network. To solve this properly, we are designing an Endpoint Sentinel Local Agent that will run inside the developer’s machine or private network, execute checks locally and securely submit the results to Endpoint Sentinel.
+
+We are also working on automated setup and Docker packaging to simplify installation, local development and self-deployment for small engineering teams. These capabilities were outside the available hackathon development window and are therefore documented as the next implementation milestone rather than being represented as completed features in this submission.
 
 ## Team
 
